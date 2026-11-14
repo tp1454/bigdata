@@ -128,6 +128,7 @@ class ClickHouseSink(MapFunction):
 def main():
     env = StreamExecutionEnvironment.get_execution_environment()
     env.set_parallelism(1) 
+    env.enable_checkpointing(60_000)
 
     all_streams = []
     

@@ -211,6 +211,7 @@ services:
   jobmanager:
     build: ./flink-jobs
     container_name: jobmanager
+    restart: unless-stopped
     ports:
       - "8081:8081"
     depends_on:
@@ -222,7 +223,8 @@ services:
       bash -c "
       /docker-entrypoint.sh jobmanager & 
       sleep 5;
-      flink run -d -m localhost:8081 -py /opt/flink/usrlib/src/job_kafka_to_clickhouse.py --pyFiles /opt/flink/usrlib/src/transforms.py,/opt/flink/usrlib/src/config.py;
+      until flink run -d -m localhost:8081 -py /opt/flink/usrlib/src/job_kafka_to_clickhouse.py --pyFiles /opt/flink/usrlib/src/transforms.py,/opt/flink/usrlib/src/config.py; do
+      echo 'submit failed, retrying in 5s'; sleep 5; done;
       tail -f /dev/null
       "
     environment:
@@ -242,6 +244,7 @@ services:
   taskmanager:
     build: ./flink-jobs
     container_name: taskmanager
+    restart: unless-stopped
     depends_on:
       - jobmanager
     command: taskmanager
