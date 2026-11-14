@@ -1,5 +1,6 @@
 import { Elysia, t } from 'elysia'
 import { cors } from '@elysiajs/cors'
+import { openapi } from '@elysia/openapi'
 import { createClient } from '@clickhouse/client'
 
 const ch = createClient({
@@ -7,14 +8,33 @@ const ch = createClient({
   username: process.env.CLICKHOUSE_USER ?? 'default',
   password: process.env.CLICKHOUSE_PASSWORD ?? 'clickhouse',
   database: process.env.CLICKHOUSE_DB ?? 'analytics',
+  clickhouse_settings: {
+    // return UInt64 ids as JSON numbers instead of quoted strings
+    output_format_json_quote_64bit_integers: 0,
+  },
 })
 
 const app = new Elysia()
   .use(cors())
+  .use(openapi({
+    documentation: {
+      info: {
+        title: 'Analytics API',
+        version: '0.1.0',
+        description: 'Query ClickHouse tables populated by Kafka -> Flink.',
+      },
+      tags: [
+        { name: 'health', description: 'Service health' },
+        { name: 'crypto', description: 'Crypto trades' },
+      ],
+    },
+  }))
   .get('/health', async () => ({
     ok: await ch.ping(),
     service: 'analytics-api',
-  }))
+  }), {
+    detail: { tags: ['health'], summary: 'Liveness and ClickHouse ping' },
+  })
   .get('/api/latest', async ({ query }) => {
     const rs = await ch.query({
       query: `SELECT timestamp, symbol, price, quantity
@@ -28,6 +48,7 @@ const app = new Elysia()
     return await rs.json()
   }, {
     query: t.Object({ symbol: t.String({ minLength: 1, maxLength: 20 }) }),
+    detail: { tags: ['crypto'], summary: 'Latest trade for a symbol' },
   })
   .get('/api/trades', async ({ query }) => {
     // limit is a clamped number, so it is safe to inline; symbol stays parameterized.
@@ -47,6 +68,7 @@ const app = new Elysia()
       symbol: t.String({ minLength: 1, maxLength: 20 }),
       limit: t.Optional(t.Numeric()),
     }),
+    detail: { tags: ['crypto'], summary: 'Recent trades for a symbol' },
   })
   .onError(({ code, error, set }) => {
     if (code === 'VALIDATION') {
