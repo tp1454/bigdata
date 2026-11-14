@@ -12,6 +12,10 @@ services:
     volumes:
       - ./producers/src:/app/src                  # hot reload: edit → restart
 
+  binance-producer:
+    volumes:
+      - ./producers/src:/app/src                  # hot reload: apply base_producer fix w/o rebuild
+
   grafana:
     environment:
       GF_LOG_LEVEL: debug
