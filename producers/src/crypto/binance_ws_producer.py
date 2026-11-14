@@ -1,6 +1,10 @@
 """Stream Binance trade events into the crypto topic."""
 
 import logging
+import os
+import queue
+import signal
+import threading
 
 from binance import ThreadedWebsocketManager
 
@@ -10,33 +14,68 @@ from ..base_producer import BaseProducer
 log = logging.getLogger(__name__)
 
 SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+QUEUE_MAX = 1000
+# python-binance's default (100) overflows on raw trade streams.
+SOCKET_QUEUE_MAX = 10000
 
 
 class BinanceProducer(BaseProducer):
     def __init__(self):
         super().__init__(config.TOPIC_CRYPTO)
-        self.bm = ThreadedWebsocketManager()
+        self._q = queue.Queue(maxsize=QUEUE_MAX)
+        self._worker = threading.Thread(target=self._drain, daemon=True)
+        self._worker.start()
+        self.bm = ThreadedWebsocketManager(max_queue_size=SOCKET_QUEUE_MAX)
         self.bm.start()
 
     def _handle_trade(self, msg):
         """Callback fired on every trade event from Binance."""
-        if msg.get("e") != "trade":
+        if msg.get("e") == "error":
+            log.error("binance socket error: %s", msg)
+            # python-binance 1.0.37 never reconnects once its read loop closes
+            # (queue overflow); exit so Docker restarts instead of spinning.
+            if msg.get("type") == "ReadLoopClosed":
+                os._exit(1)
             return
-        self.publish(msg["s"], {
-            "symbol": msg["s"],
-            "timestamp": msg["T"],
-            "price": float(msg["p"]),
-            "quantity": float(msg["q"]),
-            "trade_id": msg["t"],
-            "source": "binance",
-        })
+        if msg.get("e") != "aggTrade":
+            return
+        try:
+            self._q.put_nowait(msg)
+        except queue.Full:
+            log.warning("dropping trade; queue full")
+
+    def _drain(self):
+        while True:
+            msg = self._q.get()
+            if msg is None:
+                break
+            try:
+                self.publish(msg["s"], {
+                    "symbol": msg["s"],
+                    "timestamp": msg["T"],
+                    "price": float(msg["p"]),
+                    "quantity": float(msg["q"]),
+                    "trade_id": msg["a"],
+                    "source": "binance",
+                })
+            except Exception:
+                log.exception("failed to publish trade")
+        self.flush()
+
+    def _shutdown(self, signum, frame):
+        self.bm.stop()
 
     def run(self):
+        signal.signal(signal.SIGTERM, self._shutdown)
+        signal.signal(signal.SIGINT, self._shutdown)
         for symbol in SYMBOLS:
-            self.bm.start_trade_socket(symbol=symbol, callback=self._handle_trade)
-        self.bm.join()  # blocks until sockets close; the library auto-reconnects
+            self.bm.start_aggtrade_socket(symbol=symbol, callback=self._handle_trade)
+        self.bm.join()  # returns after _shutdown() stops the sockets
+        self._q.put(None)
+        self._worker.join(timeout=10)
+
 
 if __name__ == "__main__":
-    import logging
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s %(message)s")
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s [%(name)s] %(levelname)s %(message)s")
     BinanceProducer().run()
