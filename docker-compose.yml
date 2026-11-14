@@ -104,6 +104,22 @@ services:
       retries: 5
     networks: [streaming]
 
+  api:
+    build: ./api
+    container_name: api
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
+    ports:
+      - "${API_PORT:-4000}:4000"
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    networks: [streaming]
+
   yahoo-producer:
     build: ./producers
     container_name: yahoo-producer
