@@ -94,3 +94,16 @@ CREATE TABLE IF NOT EXISTS analytics.company_filings
 )
 ENGINE = ReplacingMergeTree(ingested_at)
 ORDER BY (cik, accession_number);
+
+-- 7. Ban ghi loi parse (dead-letter), giu 30 ngay
+CREATE TABLE IF NOT EXISTS analytics.pipeline_errors
+(
+    topic LowCardinality(String),
+    error String,
+    raw String,
+    ts DateTime64(3, 'UTC') DEFAULT now64(3)
+)
+ENGINE = MergeTree()
+PARTITION BY toYYYYMM(ts)
+ORDER BY (ts)
+TTL ts + INTERVAL 30 DAY;

@@ -40,6 +40,7 @@ class ClickHouseSink(MapFunction, CheckpointedFunction):
         self.client = None
         self.batch_size = batch_size
         self.columns_map = {table: cols for table, cols, _ in transforms.TOPICS.values()}
+        self.columns_map[transforms.ERROR_TABLE] = transforms.ERROR_COLUMNS
         self.buffers = {table: [] for table in self.columns_map}
 
     def open(self, runtime_context):

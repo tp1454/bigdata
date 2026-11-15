@@ -4,6 +4,12 @@ from datetime import date, datetime, timezone
 
 log = logging.getLogger(__name__)
 
+# Rows that fail parsing go here instead of being dropped.
+ERROR_TABLE = "pipeline_errors"
+ERROR_COLUMNS = ["topic", "error", "raw"]
+# shortcut: raw payload is truncated to bound the dead-letter row size.
+RAW_LIMIT = 500
+
 # ==========================================
 # 1. CÁC HÀM TIỆN ÍCH CHUYỂN ĐỔI THỜI GIAN
 # ==========================================
@@ -135,6 +141,7 @@ def parse_kafka_message(topic, raw_json):
     Trả về (yield) các Tuple: (Tên_Bảng, Dòng_Dữ_Liệu)
     """
     if topic not in TOPICS:
+        yield (ERROR_TABLE, (topic, "unknown topic", str(raw_json)[:RAW_LIMIT]))
         return
 
     table_name, _, transform_fn = TOPICS[topic]
@@ -146,7 +153,7 @@ def parse_kafka_message(topic, raw_json):
             # Trả về tên bảng kèm theo dữ liệu để ClickHouseSink biết cần ghi vào đâu
             yield (table_name, row)
             
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as e:
-        # Xử lý lỗi y hệt như file consumers gốc: Ghi log và bỏ qua bản ghi lỗi
-        log.warning("Skip bad record on %s: %s", topic, e)
-        return
+    except (KeyError, TypeError, ValueError) as e:
+        # Keep the record for inspection instead of dropping it silently.
+        log.warning("Bad record on %s: %s", topic, e)
+        yield (ERROR_TABLE, (topic, str(e), str(raw_json)[:RAW_LIMIT]))
