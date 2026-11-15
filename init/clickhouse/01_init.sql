@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS analytics.equities_prices
 ENGINE = ReplacingMergeTree(ingested_at)
 PARTITION BY toYYYYMM(ts)
 ORDER BY (symbol, ts)
-TTL ts + INTERVAL 90 DAY;
+TTL toDateTime(ts) + INTERVAL 90 DAY;
 
 -- 2. Giao dich Binance
 CREATE TABLE IF NOT EXISTS analytics.crypto_trades
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS analytics.crypto_trades
 ENGINE = ReplacingMergeTree(ingested_at)
 PARTITION BY toYYYYMM(timestamp)
 ORDER BY (source, symbol, trade_id)
-TTL timestamp + INTERVAL 90 DAY;
+TTL toDateTime(timestamp) + INTERVAL 90 DAY;
 
 -- 3. Du lieu thi truong CoinGecko
 CREATE TABLE IF NOT EXISTS analytics.crypto_market_data
@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS analytics.crypto_market_data
 ENGINE = ReplacingMergeTree(ingested_at)
 PARTITION BY toYYYYMM(timestamp)
 ORDER BY (source, symbol, timestamp)
-TTL timestamp + INTERVAL 90 DAY;
+TTL toDateTime(timestamp) + INTERVAL 90 DAY;
 
 -- 4. Ty gia Forex
 CREATE TABLE IF NOT EXISTS analytics.forex_rates
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS analytics.forex_rates
 ENGINE = ReplacingMergeTree(ingested_at)
 PARTITION BY toYYYYMM(timestamp)
 ORDER BY (source, pair, timestamp)
-TTL timestamp + INTERVAL 90 DAY;
+TTL toDateTime(timestamp) + INTERVAL 90 DAY;
 
 -- 5. Chi so kinh te BLS va Treasury (daily, keep forever)
 CREATE TABLE IF NOT EXISTS analytics.macro_indicators
@@ -106,4 +106,4 @@ CREATE TABLE IF NOT EXISTS analytics.pipeline_errors
 ENGINE = MergeTree()
 PARTITION BY toYYYYMM(ts)
 ORDER BY (ts)
-TTL ts + INTERVAL 30 DAY;
+TTL toDateTime(ts) + INTERVAL 30 DAY;
