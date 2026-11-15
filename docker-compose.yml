@@ -159,6 +159,7 @@ services:
     command: python -m src.equities.sec_edgar_producer
     environment:
       KAFKA_BROKER: kafka:29092
+      SEC_CONTACT_EMAIL: ${SEC_CONTACT_EMAIL:-}
     depends_on:
       kafka-init:
         condition: service_completed_successfully        

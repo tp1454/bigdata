@@ -1,4 +1,4 @@
-"""Fetch US Treasury yield curve rates into the macro topic."""
+"""Fetch US Treasury average interest rates into the macro topic."""
 
 import logging
 import time
@@ -20,7 +20,9 @@ class TreasuryProducer(BaseProducer):
     def run(self):
         while True:
             try:
-                # Daily Treasury Par Yield Curve Rates
+                # Average interest rates on Treasury securities.
+                # shortcut: not the par yield curve; switch feeds if a true
+                # yield curve is needed.
                 url = "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v2/accounting/od/avg_interest_rates"
                 params = {
                     "sort": "-record_date",
@@ -30,8 +32,8 @@ class TreasuryProducer(BaseProducer):
                 resp.raise_for_status()
 
                 for row in resp.json()["data"]:
-                    self.publish("TREASURY_YIELD", {
-                        "indicator": "TREASURY_YIELD",
+                    self.publish("TREASURY_AVG_INTEREST_RATE", {
+                        "indicator": "TREASURY_AVG_INTEREST_RATE",
                         "timestamp": row["record_date"],
                         "value": float(row["avg_interest_rate_amt"]),
                         "source": "treasury",
