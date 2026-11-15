@@ -39,4 +39,3 @@ CLICKHOUSE_DB = os.getenv("CLICKHOUSE_DB", "analytics")
 # PIPELINE
 # ==========================================
 CHECKPOINT_INTERVAL_MS = int(os.getenv("CHECKPOINT_INTERVAL_MS", "60000"))
-SINK_BATCH_SIZE = int(os.getenv("SINK_BATCH_SIZE", "1000"))

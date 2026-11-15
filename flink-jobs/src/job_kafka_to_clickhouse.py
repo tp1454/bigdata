@@ -10,12 +10,12 @@ import clickhouse_connect
 from pyflink.common import Types, WatermarkStrategy
 from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.datastream.connectors.kafka import (
-    KafkaOffsetResetType,
+    KafkaOffsetResetStrategy,
     KafkaOffsetsInitializer,
     KafkaSource,
 )
 from pyflink.common.serialization import SimpleStringSchema
-from pyflink.datastream.functions import CheckpointedFunction, MapFunction
+from pyflink.datastream.functions import MapFunction
 
 import config
 import transforms
@@ -26,22 +26,23 @@ log = logging.getLogger(__name__)
 # ==============================================================================
 # CLICKHOUSE SINK
 # ==============================================================================
-class ClickHouseSink(MapFunction, CheckpointedFunction):
-    """Buffer rows per table and insert them in batches.
+class ClickHouseSink(MapFunction):
+    """Insert each row synchronously.
 
-    Buffers are deliberately not part of Flink state: Kafka offsets are only
-    committed when a checkpoint completes, so rows buffered after the last
-    checkpoint are replayed by the source if the task fails. Flushing in
-    snapshot_state() keeps the window between insert and offset commit aligned
-    with the checkpoint, which is at-least-once delivery.
+    PyFlink 1.18 exposes neither CheckpointedFunction nor a Python SinkWriter,
+    so there is no hook that runs when a checkpoint is taken. A buffer would
+    therefore still hold rows when Kafka offsets commit, and a later failure
+    would lose them. Inserting per record keeps the write inside the record's
+    processing: if the insert fails the task fails and the checkpoint never
+    commits, so Kafka replays the batch (at-least-once).
+
+    Server-side async_insert batches the small HTTP inserts into proper parts.
     """
 
-    def __init__(self, batch_size=1000):
+    def __init__(self):
         self.client = None
-        self.batch_size = batch_size
         self.columns_map = {table: cols for table, cols, _ in transforms.TOPICS.values()}
         self.columns_map[transforms.ERROR_TABLE] = transforms.ERROR_COLUMNS
-        self.buffers = {table: [] for table in self.columns_map}
 
     def open(self, runtime_context):
         self.client = clickhouse_connect.get_client(
@@ -57,49 +58,27 @@ class ClickHouseSink(MapFunction, CheckpointedFunction):
         if value is None:
             return True
 
-        table_name, row_data = value
-        if table_name not in self.buffers:
+        table_name, row = value
+        column_names = self.columns_map.get(table_name)
+        if column_names is None:
             log.warning("Dropping row for unknown table %s", table_name)
             return True
 
-        self.buffers[table_name].append(row_data)
-        if len(self.buffers[table_name]) >= self.batch_size:
-            self.flush_table(table_name)
-        return True
-
-    def flush_table(self, table_name):
-        rows = self.buffers[table_name]
-        if not rows:
-            return
         try:
             self.client.insert(
                 table=table_name,
-                data=rows,
-                column_names=self.columns_map[table_name],
+                data=[row],
+                column_names=column_names,
+                settings={"async_insert": 1, "wait_for_async_insert": 1},
             )
         except Exception:
-            # Fail the task instead of dropping rows: the checkpoint never
-            # completes, so Kafka replays the batch on restart.
-            log.exception("Insert into %s failed (%d rows); failing task to replay", table_name, len(rows))
+            # Fail the task instead of dropping the row: without a completed
+            # checkpoint Kafka replays it on restart.
+            log.exception("Insert into %s failed; failing task to replay", table_name)
             raise
-        log.info("Inserted %d rows into %s", len(rows), table_name)
-        self.buffers[table_name] = []
-
-    def flush_all(self):
-        for table_name in self.buffers:
-            self.flush_table(table_name)
-
-    def snapshot_state(self, context):
-        self.flush_all()
-
-    def initialize_state(self, context):
-        pass
+        return True
 
     def close(self):
-        try:
-            self.flush_all()
-        except Exception:
-            log.exception("Final flush failed; buffered rows will be replayed on restart")
         if self.client:
             self.client.close()
 
@@ -124,7 +103,7 @@ def main():
             .set_topics(topic) \
             .set_group_id(config.KAFKA_GROUP_ID) \
             .set_starting_offsets(
-                KafkaOffsetsInitializer.committed_offsets(KafkaOffsetResetType.EARLIEST)
+                KafkaOffsetsInitializer.committed_offsets(KafkaOffsetResetStrategy.EARLIEST)
             ) \
             .set_value_only_deserializer(SimpleStringSchema()) \
             .build()
@@ -146,10 +125,7 @@ def main():
     for stream in all_streams[1:]:
         merged_stream = merged_stream.union(stream)
 
-    merged_stream.map(
-        ClickHouseSink(batch_size=config.SINK_BATCH_SIZE),
-        output_type=Types.BOOLEAN(),
-    )
+    merged_stream.map(ClickHouseSink(), output_type=Types.BOOLEAN())
 
     log.info("Starting Kafka to ClickHouse job")
     env.execute("Kafka_to_ClickHouse_Pipeline")
