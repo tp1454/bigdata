@@ -236,7 +236,8 @@ services:
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
-        until flink list -m jobmanager:8081 >/dev/null 2>&1; do
+        for _ in $(seq 1 60); do
+          flink list -m jobmanager:8081 >/dev/null 2>&1 && break
           echo "waiting for Flink REST API"; sleep 2
         done
         if [ "$(flink list -r -m jobmanager:8081 2>/dev/null | grep -c RUNNING)" -gt 0 ]; then
