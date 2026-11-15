@@ -1,6 +1,5 @@
 """Fetch BLS economic indicators (CPI, unemployment) into the macro topic."""
 
-import json
 import logging
 import time
 

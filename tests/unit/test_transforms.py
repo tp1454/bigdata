@@ -3,7 +3,7 @@ from datetime import date, datetime, timezone
 
 import pytest
 
-from transforms import _ms_to_dt, _sec_rows, _to_date, parse_kafka_message
+from transforms import _ms_to_dt, _to_date, parse_kafka_message
 
 
 def one(topic, payload):
@@ -76,12 +76,25 @@ def test_sec_flattens_one_message_into_many_rows_and_skips_incomplete():
 
 
 @pytest.mark.parametrize("raw", ["not json", "{}", '{"symbol": "X"}'])
-def test_bad_records_are_skipped_without_raising(raw):
-    assert list(parse_kafka_message("equities.prices", raw)) == []
+def test_bad_records_are_dead_lettered(raw):
+    rows = list(parse_kafka_message("equities.prices", raw))
+    assert len(rows) == 1
+    table, (topic, error, stored) = rows[0]
+    assert table == "pipeline_errors"
+    assert topic == "equities.prices"
+    assert error
+    assert stored == raw
 
 
-def test_unknown_topic_is_ignored():
-    assert list(parse_kafka_message("nope", "{}")) == []
+def test_unknown_topic_is_dead_lettered():
+    assert list(parse_kafka_message("nope", "{}")) == [
+        ("pipeline_errors", ("nope", "unknown topic", "{}")),
+    ]
+
+
+def test_dead_letter_payload_is_truncated():
+    rows = list(parse_kafka_message("equities.prices", "x" * 1000))
+    assert len(rows[0][1][2]) == 500
 
 
 def test_time_helpers():
