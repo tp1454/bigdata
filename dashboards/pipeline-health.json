@@ -1,0 +1,120 @@
+{
+  "uid": "pipeline-health",
+  "title": "Pipeline Health",
+  "tags": ["pipeline"],
+  "timezone": "utc",
+  "refresh": "30s",
+  "time": { "from": "now-24h", "to": "now" },
+  "schemaVersion": 39,
+  "annotations": { "list": [] },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Seconds since last crypto trade",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "queryType": "sql",
+          "editorMode": "code",
+          "format": 2,
+          "rawSql": "SELECT dateDiff('second', max(timestamp), now()) FROM analytics.crypto_trades"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Dead letters in the last hour",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "queryType": "sql",
+          "editorMode": "code",
+          "format": 2,
+          "rawSql": "SELECT count() FROM analytics.pipeline_errors WHERE ts >= now() - INTERVAL 1 HOUR"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Rows in the last 5 minutes",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "queryType": "sql",
+          "editorMode": "code",
+          "format": 2,
+          "rawSql": "SELECT count() FROM analytics.crypto_trades WHERE timestamp >= now() - INTERVAL 5 MINUTE"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Rows per table",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "queryType": "sql",
+          "editorMode": "code",
+          "format": 2,
+          "rawSql": "SELECT 'crypto_trades' AS table_name, count() AS rows FROM analytics.crypto_trades UNION ALL SELECT 'equities_prices', count() FROM analytics.equities_prices UNION ALL SELECT 'crypto_market_data', count() FROM analytics.crypto_market_data UNION ALL SELECT 'forex_rates', count() FROM analytics.forex_rates UNION ALL SELECT 'macro_indicators', count() FROM analytics.macro_indicators UNION ALL SELECT 'company_filings', count() FROM analytics.company_filings UNION ALL SELECT 'pipeline_errors', count() FROM analytics.pipeline_errors"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Dead letters by topic and error (24h)",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "queryType": "sql",
+          "editorMode": "code",
+          "format": 2,
+          "rawSql": "SELECT topic, error, count() AS errors, max(ts) AS last_seen FROM analytics.pipeline_errors WHERE ts >= now() - INTERVAL 1 DAY GROUP BY topic, error ORDER BY errors DESC"
+        }
+      ]
+    }
+  ]
+}
