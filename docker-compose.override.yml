@@ -2,19 +2,17 @@ services:
   kafka:
     environment:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"    # convenience in dev
-    ports:
-      - "29092:9092"
 
   yahoo-producer:
     environment:
       SYMBOLS: "AAPL,MSFT"                        # 2 symbols = fast cycles
-      POLL_INTERVAL: "15"                         # every 15s, not 60s
+      POLL_INTERVAL: "15"                         # seconds between cycles
     volumes:
       - ./producers/src:/app/src                  # hot reload: edit → restart
 
   binance-producer:
     volumes:
-      - ./producers/src:/app/src                  # hot reload: apply base_producer fix w/o rebuild
+      - ./producers/src:/app/src                  # hot reload
 
   grafana:
     environment:

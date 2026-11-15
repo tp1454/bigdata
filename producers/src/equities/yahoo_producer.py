@@ -1,6 +1,7 @@
 """Poll Yahoo Finance 1m bars into the equities topic."""
 
 import logging
+import os
 import time
 
 import yfinance as yf
@@ -10,8 +11,8 @@ from ..base_producer import BaseProducer
 
 log = logging.getLogger(__name__)
 
-SYMBOLS = ["AAPL", "MSFT", "GOOG"]
-INTERVAL_SECONDS = 15
+SYMBOLS = os.getenv("SYMBOLS", "AAPL,MSFT,GOOG").split(",")
+INTERVAL_SECONDS = int(os.getenv("POLL_INTERVAL", "15"))
 
 
 class YahooProducer(BaseProducer):

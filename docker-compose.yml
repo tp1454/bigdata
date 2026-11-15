@@ -1,3 +1,15 @@
+x-producer: &producer
+  build: ./producers
+  image: producers:local
+  pull_policy: build
+  restart: unless-stopped
+  environment:
+    KAFKA_BROKER: kafka:29092
+  depends_on:
+    kafka-init:
+      condition: service_completed_successfully
+  networks: [streaming]
+
 services:
   zookeeper:
     image: confluentinc/cp-zookeeper:7.7.1
@@ -5,7 +17,7 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
-      ZOOKEEPER_SNAPSHOT_TRUST_EMPTY: "true"       
+      ZOOKEEPER_SNAPSHOT_TRUST_EMPTY: "true"
     volumes:
       - ./volumes/zookeeper-data:/var/lib/zookeeper/data
       - ./volumes/zookeeper-log:/var/lib/zookeeper/log
@@ -14,6 +26,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
     networks: [streaming]
 
   kafka:
@@ -43,10 +56,11 @@ services:
       interval: 10s
       timeout: 10s
       retries: 5
+      start_period: 20s
     networks: [streaming]
 
   kafka-init:
-    image: confluentinc/cp-kafka:7.7.1                    
+    image: confluentinc/cp-kafka:7.7.1
     container_name: kafka-init
     depends_on:
       kafka:
@@ -73,6 +87,7 @@ services:
       nofile:
         soft: 262144
         hard: 262144
+    mem_limit: 2g
     volumes:
       - clickhouse_data:/var/lib/clickhouse
       - ./init/clickhouse:/docker-entrypoint-initdb.d:ro
@@ -81,18 +96,21 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 20s
     networks: [streaming]
 
   grafana:
     image: grafana/grafana:11.4.2
     container_name: grafana
     depends_on:
-      - clickhouse
+      clickhouse:
+        condition: service_healthy
     ports:
       - "${GRAFANA_PORT:-3000}:3000"
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+    mem_limit: 512m
     volumes:
       - ./volumes/grafana-data:/var/lib/grafana
       - ./configs/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -102,115 +120,57 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 20s
     networks: [streaming]
 
+  # ==========================================
+  # PRODUCERS (one image, one process each)
+  # ==========================================
   yahoo-producer:
-    build: ./producers
+    <<: *producer
     container_name: yahoo-producer
-    restart: unless-stopped
     command: python -m src.equities.yahoo_producer
-    environment:
-      KAFKA_BROKER: kafka:29092
-    depends_on:
-      kafka-init:
-        condition: service_completed_successfully        
-    networks: [streaming]
 
   binance-producer:
-    build: ./producers
+    <<: *producer
     container_name: binance-producer
-    restart: unless-stopped
     command: python -m src.crypto.binance_ws_producer
-    environment:
-      KAFKA_BROKER: kafka:29092
-    depends_on:
-      kafka-init:
-        condition: service_completed_successfully        
-    networks: [streaming]
 
   forex-producer:
-    build: ./producers
+    <<: *producer
     container_name: forex-producer
-    restart: unless-stopped
     command: python -m src.forex.forex_producer
-    environment:
-      KAFKA_BROKER: kafka:29092
-    depends_on:
-      kafka-init:
-        condition: service_completed_successfully        
-    networks: [streaming]
 
   coingecko-producer:
-    build: ./producers
+    <<: *producer
     container_name: coingecko-producer
-    restart: unless-stopped
     command: python -m src.crypto.coingecko_producer
-    environment:
-      KAFKA_BROKER: kafka:29092
-    depends_on:
-      kafka-init:
-        condition: service_completed_successfully        
-    networks: [streaming]
 
   sec-edgar-producer:
-    build: ./producers
+    <<: *producer
     container_name: sec-edgar-producer
-    restart: unless-stopped
     command: python -m src.equities.sec_edgar_producer
     environment:
       KAFKA_BROKER: kafka:29092
       SEC_CONTACT_EMAIL: ${SEC_CONTACT_EMAIL:-}
-    depends_on:
-      kafka-init:
-        condition: service_completed_successfully        
-    networks: [streaming]
 
   bls-producer:
-    build: ./producers
+    <<: *producer
     container_name: bls-producer
-    restart: unless-stopped
     command: python -m src.macro.bls_producer
-    environment:
-      KAFKA_BROKER: kafka:29092
-    depends_on:
-      kafka-init:
-        condition: service_completed_successfully        
-    networks: [streaming]
 
   treasury-producer:
-    build: ./producers
+    <<: *producer
     container_name: treasury-producer
-    restart: unless-stopped
     command: python -m src.macro.treasury_producer
-    environment:
-      KAFKA_BROKER: kafka:29092
-    depends_on:
-      kafka-init:
-        condition: service_completed_successfully        
-    networks: [streaming]
-
-  # ==========================================
-  # CONSUMER (Đã vô hiệu hóa để nhường chỗ cho Flink)
-  # ==========================================
-  # consumer:
-  #   build: ./consumers
-  #   container_name: consumer
-  #   restart: unless-stopped
-  #   environment:
-  #     KAFKA_BROKER: kafka:29092
-  #     CLICKHOUSE_HOST: clickhouse
-  #   depends_on:
-  #     kafka-init:
-  #       condition: service_completed_successfully
-  #     clickhouse:
-  #       condition: service_healthy
-  #   networks: [streaming]
 
   # ==========================================
   # FLINK CLUSTER
   # ==========================================
   jobmanager:
     build: ./flink-jobs
+    image: flink-jobs:local
+    pull_policy: build
     container_name: jobmanager
     restart: unless-stopped
     ports:
@@ -220,14 +180,7 @@ services:
         condition: service_completed_successfully
       clickhouse:
         condition: service_healthy
-    command: >
-      bash -c "
-      /docker-entrypoint.sh jobmanager & 
-      sleep 5;
-      until flink run -d -m localhost:8081 -py /opt/flink/usrlib/src/job_kafka_to_clickhouse.py --pyFiles /opt/flink/usrlib/src/transforms.py,/opt/flink/usrlib/src/config.py; do
-      echo 'submit failed, retrying in 5s'; sleep 5; done;
-      tail -f /dev/null
-      "
+    command: jobmanager
     environment:
       FLINK_PROPERTIES: |
         jobmanager.rpc.address: jobmanager
@@ -238,30 +191,59 @@ services:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
     healthcheck:
-      test: ["CMD-SHELL", "curl -s http://localhost:8081/jobs/overview | grep -q '\"state\":\"RUNNING\"' || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/overview >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
       start_period: 40s
     networks: [streaming]
 
   taskmanager:
     build: ./flink-jobs
+    image: flink-jobs:local
+    pull_policy: build
     container_name: taskmanager
     restart: unless-stopped
     depends_on:
-      - jobmanager
+      jobmanager:
+        condition: service_healthy
     command: taskmanager
     environment:
       FLINK_PROPERTIES: |
         jobmanager.rpc.address: jobmanager
-        restart-strategy: fixed-delay
-        restart-strategy.fixed-delay.attempts: 3
-        restart-strategy.fixed-delay.delay: 10 s
         taskmanager.numberOfTaskSlots: 2
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
+    networks: [streaming]
+
+  # One-shot job submission. Re-runs safely: it exits if a job is already
+  # running instead of submitting a duplicate.
+  flink-submit:
+    build: ./flink-jobs
+    image: flink-jobs:local
+    pull_policy: build
+    container_name: flink-submit
+    depends_on:
+      jobmanager:
+        condition: service_healthy
+    restart: "no"
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        until flink list -m jobmanager:8081 >/dev/null 2>&1; do
+          echo "waiting for Flink REST API"; sleep 2
+        done
+        if [ "$(flink list -r -m jobmanager:8081 2>/dev/null | grep -c RUNNING)" -gt 0 ]; then
+          echo "job already running; skipping submission"; exit 0
+        fi
+        flink run -d -m jobmanager:8081 \
+          -py /opt/flink/usrlib/src/job_kafka_to_clickhouse.py \
+          --pyFiles /opt/flink/usrlib/src/transforms.py,/opt/flink/usrlib/src/config.py
     networks: [streaming]
 
 networks:
