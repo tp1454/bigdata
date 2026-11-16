@@ -33,7 +33,11 @@ const app = new Elysia()
     ok: await ch.ping(),
     service: 'analytics-api',
   }), {
-    detail: { tags: ['health'], summary: 'Liveness and ClickHouse ping' },
+    detail: {
+      tags: ['health'],
+      operationId: 'health.check',
+      summary: 'Liveness and ClickHouse ping',
+    },
   })
   .get('/api/latest', async ({ query }) => {
     const rs = await ch.query({
@@ -48,7 +52,11 @@ const app = new Elysia()
     return await rs.json()
   }, {
     query: t.Object({ symbol: t.String({ minLength: 1, maxLength: 20 }) }),
-    detail: { tags: ['crypto'], summary: 'Latest trade for a symbol' },
+    detail: {
+      tags: ['crypto'],
+      operationId: 'crypto.latest',
+      summary: 'Latest trade for a symbol',
+    },
   })
   .get('/api/trades', async ({ query }) => {
     // limit is a clamped number, so it is safe to inline; symbol stays parameterized.
@@ -68,7 +76,11 @@ const app = new Elysia()
       symbol: t.String({ minLength: 1, maxLength: 20 }),
       limit: t.Optional(t.Numeric()),
     }),
-    detail: { tags: ['crypto'], summary: 'Recent trades for a symbol' },
+    detail: {
+      tags: ['crypto'],
+      operationId: 'crypto.trades',
+      summary: 'Recent trades for a symbol',
+    },
   })
   .onError(({ code, error, set }) => {
     if (code === 'VALIDATION') {

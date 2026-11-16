@@ -120,6 +120,33 @@ services:
         condition: service_healthy
     networks: [streaming]
 
+  mcp:
+    image: node:22-alpine
+    container_name: mcp
+    restart: unless-stopped
+    command:
+      - npx
+      - -y
+      - "@ivotoby/openapi-mcp-server@1.18.0"
+      - --api-base-url
+      - http://api:4000
+      - --openapi-spec
+      - http://api:4000/openapi/json
+      - --transport
+      - http
+      - --host
+      - 0.0.0.0
+      - --port
+      - "3001"
+      - --exclude-tag
+      - health
+    ports:
+      - "${MCP_PORT:-3001}:3001"
+    depends_on:
+      api:
+        condition: service_started
+    networks: [streaming]
+
   yahoo-producer:
     build: ./producers
     container_name: yahoo-producer
