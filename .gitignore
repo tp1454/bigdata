@@ -7,3 +7,4 @@ notes/
 AGENTS.md
 .vscode/
 .venv/
+node_modules/
