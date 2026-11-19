@@ -3,7 +3,7 @@ set -euo pipefail
 
 BROKER="${KAFKA_BROKER:-kafka:29092}"
 PARTITIONS=3
-TOPICS=(equities.prices crypto.trades crypto.market forex.rates macro.indicators fundamentals.filings)
+TOPICS=(equities.prices crypto.trades crypto.ohlcv crypto.market forex.rates macro.indicators fundamentals.filings fundamentals.actions fundamentals.statements fundamentals.insider)
 
 until kafka-topics --bootstrap-server "$BROKER" --list >/dev/null 2>&1; do
   echo "Waiting for Kafka at $BROKER..."
@@ -24,7 +24,7 @@ for topic in "${TOPICS[@]}"; do
 done
 
 # High-frequency tick data: keep a bounded local window (7 days).
-for topic in equities.prices crypto.trades crypto.market forex.rates; do
+for topic in equities.prices crypto.trades crypto.ohlcv crypto.market forex.rates; do
   kafka-configs --bootstrap-server "$BROKER" --alter --entity-type topics \
     --entity-name "$topic" --add-config retention.ms=604800000
 done
@@ -32,5 +32,12 @@ done
 # Filings are keyed snapshots: compact old versions, keep 30 days.
 kafka-configs --bootstrap-server "$BROKER" --alter --entity-type topics \
   --entity-name fundamentals.filings --add-config 'cleanup.policy=compact,retention.ms=2592000000'
+
+# Corporate actions, statements and insider rows are keyed events, not
+# snapshots: keep 30 days so a replay can rebuild recent history.
+for topic in fundamentals.actions fundamentals.statements fundamentals.insider; do
+  kafka-configs --bootstrap-server "$BROKER" --alter --entity-type topics \
+    --entity-name "$topic" --add-config retention.ms=2592000000
+done
 
 echo "Topic configuration applied"
