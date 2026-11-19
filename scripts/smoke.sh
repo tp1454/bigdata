@@ -55,6 +55,7 @@ done
 total_rows() {
     local sum=0
     for table in $TABLES; do
+        [ "$table" = "pipeline_errors" ] && continue
         sum=$((sum + $(count "$table")))
     done
     echo "$sum"
