@@ -5,6 +5,7 @@ COMPOSE := docker compose
 PYTEST := $(if $(wildcard .venv/bin/pytest),.venv/bin/pytest,python3 -m pytest)
 RUFF := $(if $(wildcard .venv/bin/ruff),.venv/bin/ruff,ruff)
 
+KAFKA_BROKERS := kafka-1:29092,kafka-2:29092,kafka-3:29092
 KAFKA_TOPICS := equities.prices crypto.trades crypto.ohlcv crypto.market forex.rates macro.indicators fundamentals.filings fundamentals.actions fundamentals.statements fundamentals.insider
 # table:time-column pairs for freshness checks
 TABLES := equities_prices:ts crypto_trades:timestamp crypto_ohlcv:timestamp crypto_market_data:timestamp forex_rates:timestamp macro_indicators:timestamp company_filings:filing_date corporate_actions:action_date fundamentals:end_date insider_transactions:transaction_date pipeline_errors:ts
@@ -55,19 +56,19 @@ shell: ## Open a shell (SERVICE=x)
 	$(COMPOSE) exec $(SERVICE) bash
 
 topics: ## Re-run topic creation/configuration
-	$(COMPOSE) exec -T kafka bash /etc/kafka/create-topics.sh
+	$(COMPOSE) exec -T kafka-1 bash /etc/kafka/create-topics.sh
 
 feed: ## Tail Kafka messages (TOPIC=x for one topic)
-	@$(COMPOSE) exec -T kafka kafka-console-consumer --bootstrap-server kafka:29092 $(if $(TOPIC),--topic $(TOPIC),--include '.*')
+	@$(COMPOSE) exec -T kafka-1 kafka-console-consumer --bootstrap-server $(KAFKA_BROKERS) $(if $(TOPIC),--topic $(TOPIC),--include '.*')
 
 test-topics: ## Show topics, partitions and message counts
 	@echo "=== Existing Topics ==="
-	@$(COMPOSE) exec -T kafka kafka-topics --bootstrap-server kafka:29092 --list
+	@$(COMPOSE) exec -T kafka-1 kafka-topics --bootstrap-server $(KAFKA_BROKERS) --list
 	@echo ""
 	@echo "=== Topic Stats (Partitions | Messages) ==="
 	@for t in $(KAFKA_TOPICS); do \
-		partitions=$$($(COMPOSE) exec -T kafka kafka-topics --bootstrap-server kafka:29092 --describe --topic $$t 2>/dev/null | head -1 | grep -o 'PartitionCount: [0-9]*' | awk '{print $$2}'); \
-		messages=$$($(COMPOSE) exec -T kafka kafka-get-offsets --bootstrap-server kafka:29092 --topic $$t 2>/dev/null | awk -F: '{sum+=$$3} END{print sum+0}'); \
+		partitions=$$($(COMPOSE) exec -T kafka-1 kafka-topics --bootstrap-server $(KAFKA_BROKERS) --describe --topic $$t 2>/dev/null | head -1 | grep -o 'PartitionCount: [0-9]*' | awk '{print $$2}'); \
+		messages=$$($(COMPOSE) exec -T kafka-1 kafka-get-offsets --bootstrap-server $(KAFKA_BROKERS) --topic $$t 2>/dev/null | awk -F: '{sum+=$$3} END{print sum+0}'); \
 		printf "%-25s %3s partitions | %s messages\n" "$$t" "$$partitions" "$$messages"; \
 	done
 
@@ -139,6 +140,6 @@ check: lint test ## Lint, unit tests and compose validation
 
 nuke: ## DANGER: wipe all data and restart
 	$(COMPOSE) down -v
-	docker run --rm -v "$(CURDIR)/volumes:/v" alpine sh -c 'rm -rf /v/* && mkdir -p /v/zookeeper-data /v/zookeeper-log /v/kafka-data /v/grafana-data && chown -R 1000:1000 /v/zookeeper-data /v/zookeeper-log /v/kafka-data && chown -R 472:472 /v/grafana-data'
+	docker run --rm -v "$(CURDIR)/volumes:/v" alpine sh -c 'rm -rf /v/* && mkdir -p /v/zookeeper-data /v/zookeeper-log /v/kafka-data-1 /v/kafka-data-2 /v/kafka-data-3 /v/grafana-data && chown -R 1000:1000 /v/zookeeper-data /v/zookeeper-log /v/kafka-data-1 /v/kafka-data-2 /v/kafka-data-3 && chown -R 472:472 /v/grafana-data'
 	$(COMPOSE) up -d
 	@echo "started; run 'make smoke' to verify"

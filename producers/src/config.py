@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-KAFKA_BROKER = os.getenv("KAFKA_BROKER", "localhost:29092")
+KAFKA_BROKER = os.getenv("KAFKA_BROKER", "localhost:29092,localhost:29093,localhost:29094")
 SYMBOLS = os.getenv("SYMBOLS", "AAPL,MSFT,GOOG").split(",")
 
 TOPIC_EQUITIES = "equities.prices"

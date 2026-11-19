@@ -29,14 +29,14 @@ count() {
     ch_query "SELECT count() FROM analytics.$1"
 }
 
-wait_until "kafka" docker compose exec -T kafka \
+wait_until "kafka" docker compose exec -T kafka-1 \
     kafka-broker-api-versions --bootstrap-server localhost:29092
 wait_until "clickhouse" docker compose exec -T clickhouse \
     wget -q --spider http://localhost:8123/ping
 wait_until "flink job RUNNING" bash -c \
     'docker compose exec -T jobmanager flink list -r 2>/dev/null | grep -q RUNNING'
 
-topics=$(docker compose exec -T kafka kafka-topics --bootstrap-server kafka:29092 --list | tr -d '\r')
+topics=$(docker compose exec -T kafka-1 kafka-topics --bootstrap-server kafka-1:29092,kafka-2:29092,kafka-3:29092 --list | tr -d '\r')
 for topic in $TOPICS; do
     if ! grep -qx "$topic" <<<"$topics"; then
         echo "FAIL: missing topic $topic" >&2

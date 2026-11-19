@@ -1,10 +1,23 @@
+x-kafka-brokers: &kafka-brokers "kafka-1:29092,kafka-2:29092,kafka-3:29092"
+
+x-kafka-env: &kafka-env
+  KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+  KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
+  KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+  KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+  KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+  KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+  KAFKA_MIN_INSYNC_REPLICAS: 2
+  KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+
 x-producer: &producer
   build: ./producers
   image: producers:local
   pull_policy: build
   restart: unless-stopped
   environment:
-    KAFKA_BROKER: kafka:29092
+    KAFKA_BROKER: *kafka-brokers
   depends_on:
     kafka-init:
       condition: service_completed_successfully
@@ -29,28 +42,65 @@ services:
       start_period: 10s
     networks: [streaming]
 
-  kafka:
+  kafka-1:
     image: confluentinc/cp-kafka:7.7.1
-    container_name: kafka
+    container_name: kafka-1
     depends_on:
       zookeeper:
         condition: service_healthy
     ports:
       - "${KAFKA_PORT:-29092}:9092"
     environment:
+      <<: *kafka-env
       KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:29092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-1:29092,EXTERNAL://localhost:${KAFKA_PORT:-29092}
     volumes:
-      - ./volumes/kafka-data:/var/lib/kafka/data
+      - ./volumes/kafka-data-1:/var/lib/kafka/data
       - ./init/kafka/create-topics.sh:/etc/kafka/create-topics.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:29092 >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks: [streaming]
+
+  kafka-2:
+    image: confluentinc/cp-kafka:7.7.1
+    container_name: kafka-2
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "${KAFKA_PORT_2:-29093}:9092"
+    environment:
+      <<: *kafka-env
+      KAFKA_BROKER_ID: 2
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-2:29092,EXTERNAL://localhost:${KAFKA_PORT_2:-29093}
+    volumes:
+      - ./volumes/kafka-data-2:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:29092 >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks: [streaming]
+
+  kafka-3:
+    image: confluentinc/cp-kafka:7.7.1
+    container_name: kafka-3
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - "${KAFKA_PORT_3:-29094}:9092"
+    environment:
+      <<: *kafka-env
+      KAFKA_BROKER_ID: 3
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-3:29092,EXTERNAL://localhost:${KAFKA_PORT_3:-29094}
+    volumes:
+      - ./volumes/kafka-data-3:/var/lib/kafka/data
     healthcheck:
       test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:29092 >/dev/null 2>&1 || exit 1"]
       interval: 10s
@@ -63,13 +113,17 @@ services:
     image: confluentinc/cp-kafka:7.7.1
     container_name: kafka-init
     depends_on:
-      kafka:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
         condition: service_healthy
     volumes:
       - ./init/kafka/create-topics.sh:/create-topics.sh:ro
     entrypoint: ["bash", "/create-topics.sh"]
     environment:
-      KAFKA_BROKER: kafka:29092
+      KAFKA_BROKER: *kafka-brokers
     restart: "no"
     networks: [streaming]
 
@@ -165,7 +219,7 @@ services:
     container_name: sec-edgar-producer
     command: python -m src.equities.sec_edgar_producer
     environment:
-      KAFKA_BROKER: kafka:29092
+      KAFKA_BROKER: *kafka-brokers
       SEC_CONTACT_EMAIL: ${SEC_CONTACT_EMAIL:-}
 
   corporate-actions-producer:

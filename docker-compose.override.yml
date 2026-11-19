@@ -2,10 +2,6 @@ x-dev-symbols: &dev-symbols
   SYMBOLS: "AAPL,MSFT"                          # 2 symbols = fast cycles
 
 services:
-  kafka:
-    environment:
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"    # convenience in dev
-
   yahoo-producer:
     environment:
       <<: *dev-symbols
