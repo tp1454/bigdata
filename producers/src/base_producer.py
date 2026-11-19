@@ -18,6 +18,8 @@ class BaseProducer(ABC):
         self._dropped = 0
         self.producer = Producer({
             "bootstrap.servers": config.KAFKA_BROKER,
+            "acks": "all",
+            "enable.idempotence": True,
             "queue.buffering.max.messages": 10000,
             "queue.buffering.max.kbytes": 65536,
         })
