@@ -3,8 +3,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-TOPICS="equities.prices crypto.trades crypto.market forex.rates macro.indicators fundamentals.filings"
-TABLES="equities_prices crypto_trades crypto_market_data forex_rates macro_indicators company_filings pipeline_errors"
+TOPICS="equities.prices crypto.trades crypto.ohlcv crypto.market forex.rates macro.indicators fundamentals.filings fundamentals.actions fundamentals.statements fundamentals.insider"
+TABLES="equities_prices crypto_trades crypto_ohlcv crypto_market_data forex_rates macro_indicators company_filings corporate_actions fundamentals insider_transactions pipeline_errors"
 DEADLINE_SECONDS=180
 
 wait_until() {
@@ -45,16 +45,30 @@ for topic in $TOPICS; do
 done
 echo "ok: ${TOPICS// /, }"
 
-before=$(( $(count crypto_trades) + $(count equities_prices) ))
+for table in $TABLES; do
+    if ! ch_query "SELECT count() FROM analytics.$table" >/dev/null 2>&1; then
+        echo "FAIL: missing or unreadable table analytics.$table" >&2
+        exit 1
+    fi
+done
+
+total_rows() {
+    local sum=0
+    for table in $TABLES; do
+        sum=$((sum + $(count "$table")))
+    done
+    echo "$sum"
+}
+
+before=$(total_rows)
 echo "waiting 30s for new rows..."
 sleep 30
-after=$(( $(count crypto_trades) + $(count equities_prices) ))
+after=$(total_rows)
 if (( after <= before )); then
-    echo "FAIL: no new rows in 30s (crypto_trades + equities_prices)" >&2
+    echo "FAIL: no new rows in 30s (all tables)" >&2
     exit 1
 fi
 echo "ok: $before -> $after rows"
-
 for table in $TABLES; do
     printf '  %-22s %12s rows\n' "$table" "$(count "$table")"
 done
