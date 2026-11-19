@@ -53,6 +53,24 @@ def _trade_rows(d):
     ]])
 
 
+def _fundamental_rows(d):
+    """Expand a statement message; empty batches are dead-lettered."""
+    if not d.get("rows"):
+        raise ValueError("empty fundamentals batch")
+    return iter([[
+        (
+            d["symbol"],
+            d["statement"],
+            d["period"],
+            _to_date(d["end_date"]),
+            item["line_item"],
+            float(item["value"]),
+            d["source"],
+        )
+        for item in d["rows"]
+    ]])
+
+
 # ==========================================
 # 2. HÀM XỬ LÝ ĐẶC BIỆT (1 JSON -> NHIỀU DÒNG)
 # ==========================================
@@ -174,18 +192,7 @@ TOPICS = {
     "fundamentals.statements": (
         "fundamentals",
         ["symbol", "statement", "period", "end_date", "line_item", "value", "source"],
-        lambda d: iter([[
-            (
-                d["symbol"],
-                d["statement"],
-                d["period"],
-                _to_date(d["end_date"]),
-                item["line_item"],
-                float(item["value"]),
-                d["source"],
-            )
-            for item in d["rows"]
-        ]]),
+        _fundamental_rows,
     ),
     "fundamentals.insider": (
         "insider_transactions",

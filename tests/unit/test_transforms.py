@@ -132,6 +132,14 @@ def test_fundamentals_line_item():
     ])]
 
 
+def test_empty_fundamentals_batch_is_dead_lettered():
+    rows = one("fundamentals.statements", {
+        "symbol": "AAPL", "statement": "income", "period": "annual",
+        "end_date": "2026-09-30", "source": "yahoo", "rows": [],
+    })
+    assert rows[0][0] == "pipeline_errors"
+
+
 def test_insider_transactions():
     rows = one("fundamentals.insider", {
         "symbol": "AAPL", "insider": "NEWSTEAD JENNIFER", "position": "Officer",
