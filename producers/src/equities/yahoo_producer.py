@@ -8,22 +8,31 @@ import yfinance as yf
 
 from .. import config
 from ..base_producer import BaseProducer
+from .yahoo_bars import bar_volume, should_publish
 
 log = logging.getLogger(__name__)
 
-SYMBOLS = os.getenv("SYMBOLS", "AAPL,MSFT,GOOG").split(",")
+SYMBOLS = config.SYMBOLS
 INTERVAL_SECONDS = int(os.getenv("POLL_INTERVAL", "15"))
 
 
 class YahooProducer(BaseProducer):
     def __init__(self):
         super().__init__(config.TOPIC_EQUITIES)
+        self.last_ts = {}
 
     def run(self):
         while True:
             for symbol in SYMBOLS:
                 history = yf.Ticker(symbol).history(period="1d", interval="1m")
+                if history.empty:
+                    continue
+                last = self.last_ts.get(symbol)
+                newest = history.index[-1]
                 for ts, row in history.iterrows():
+                    # Skip bars already sent; the newest bar keeps moving.
+                    if not should_publish(ts, last, newest):
+                        continue
                     # numpy scalars aren't JSON-serializable
                     self.publish(symbol, {
                         "symbol": symbol,
@@ -32,8 +41,9 @@ class YahooProducer(BaseProducer):
                         "high": float(row["High"]),
                         "low": float(row["Low"]),
                         "close": float(row["Close"]),
-                        "volume": int(row["Volume"]),
+                        "volume": bar_volume(row["Volume"]),
                     })
+                self.last_ts[symbol] = newest
             self.flush()
             time.sleep(INTERVAL_SECONDS)
 

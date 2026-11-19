@@ -5,12 +5,13 @@ COMPOSE := docker compose
 PYTEST := $(if $(wildcard .venv/bin/pytest),.venv/bin/pytest,python3 -m pytest)
 RUFF := $(if $(wildcard .venv/bin/ruff),.venv/bin/ruff,ruff)
 
-KAFKA_TOPICS := equities.prices crypto.trades crypto.market forex.rates macro.indicators fundamentals.filings
+KAFKA_BROKERS := kafka-1:29092,kafka-2:29092,kafka-3:29092
+KAFKA_TOPICS := equities.prices crypto.trades crypto.ohlcv crypto.market forex.rates macro.indicators fundamentals.filings fundamentals.actions fundamentals.statements fundamentals.insider
 # table:time-column pairs for freshness checks
-TABLES := equities_prices:ts crypto_trades:timestamp crypto_market_data:timestamp forex_rates:timestamp macro_indicators:timestamp company_filings:filing_date pipeline_errors:ts
+TABLES := equities_prices:ts crypto_trades:timestamp crypto_ohlcv:timestamp crypto_market_data:timestamp forex_rates:timestamp macro_indicators:timestamp company_filings:filing_date corporate_actions:action_date fundamentals:end_date insider_transactions:transaction_date pipeline_errors:ts
 
 .PHONY: help setup dev up build deploy redeploy down logs ps shell topics feed \
-        test-topics check-data smoke test lint fmt check nuke url query
+        test-topics check-data schema job-reset smoke test lint fmt check nuke url query
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -29,7 +30,13 @@ up: ## Start the stack (BUILD=1 to rebuild images)
 deploy: ## Rebuild, start and verify the pipeline (SERVICE=x for one service)
 	@test -f .env || (echo "missing .env; run 'make setup'"; exit 1)
 	$(COMPOSE) up -d --build $(SERVICE)
-	@if [ -z "$(SERVICE)" ]; then $(MAKE) smoke; fi
+	@if [ -z "$(SERVICE)" ]; then \
+		set -e; \
+		$(MAKE) topics; \
+		$(MAKE) schema; \
+		$(MAKE) job-reset; \
+		$(MAKE) smoke; \
+	fi
 
 redeploy: ## Recreate containers with current config, no image rebuild
 	@test -f .env || (echo "missing .env; run 'make setup'"; exit 1)
@@ -49,19 +56,19 @@ shell: ## Open a shell (SERVICE=x)
 	$(COMPOSE) exec $(SERVICE) bash
 
 topics: ## Re-run topic creation/configuration
-	$(COMPOSE) exec -T kafka bash /etc/kafka/create-topics.sh
+	$(COMPOSE) exec -T kafka-1 bash /etc/kafka/create-topics.sh
 
 feed: ## Tail Kafka messages (TOPIC=x for one topic)
-	@$(COMPOSE) exec -T kafka kafka-console-consumer --bootstrap-server kafka:29092 $(if $(TOPIC),--topic $(TOPIC),--include '.*')
+	@$(COMPOSE) exec -T kafka-1 kafka-console-consumer --bootstrap-server $(KAFKA_BROKERS) $(if $(TOPIC),--topic $(TOPIC),--include '.*')
 
 test-topics: ## Show topics, partitions and message counts
 	@echo "=== Existing Topics ==="
-	@$(COMPOSE) exec -T kafka kafka-topics --bootstrap-server kafka:29092 --list
+	@$(COMPOSE) exec -T kafka-1 kafka-topics --bootstrap-server $(KAFKA_BROKERS) --list
 	@echo ""
 	@echo "=== Topic Stats (Partitions | Messages) ==="
 	@for t in $(KAFKA_TOPICS); do \
-		partitions=$$($(COMPOSE) exec -T kafka kafka-topics --bootstrap-server kafka:29092 --describe --topic $$t 2>/dev/null | head -1 | grep -o 'PartitionCount: [0-9]*' | awk '{print $$2}'); \
-		messages=$$($(COMPOSE) exec -T kafka kafka-get-offsets --bootstrap-server kafka:29092 --topic $$t 2>/dev/null | awk -F: '{sum+=$$3} END{print sum+0}'); \
+		partitions=$$($(COMPOSE) exec -T kafka-1 kafka-topics --bootstrap-server $(KAFKA_BROKERS) --describe --topic $$t 2>/dev/null | head -1 | grep -o 'PartitionCount: [0-9]*' | awk '{print $$2}'); \
+		messages=$$($(COMPOSE) exec -T kafka-1 kafka-get-offsets --bootstrap-server $(KAFKA_BROKERS) --topic $$t 2>/dev/null | awk -F: '{sum+=$$3} END{print sum+0}'); \
 		printf "%-25s %3s partitions | %s messages\n" "$$t" "$$partitions" "$$messages"; \
 	done
 
@@ -72,6 +79,38 @@ check-data: ## Row counts and latest timestamp per table
 		out=$$($(COMPOSE) exec -T clickhouse clickhouse-client --query "SELECT count(), toString(max($$c)) FROM analytics.$$t" 2>/dev/null | tr '\t' ' '); \
 		printf '%-22s %s\n' "$$t" "$$out"; \
 	done
+
+schema: ## Apply ClickHouse schema and views (idempotent)
+	@for _ in $$(seq 1 60); do \
+		$(COMPOSE) exec -T clickhouse clickhouse-client --query "SELECT 1" >/dev/null 2>&1 && break; \
+		sleep 2; \
+	done; \
+	engine=$$($(COMPOSE) exec -T clickhouse clickhouse-client --query "SELECT engine FROM system.tables WHERE database='analytics' AND name='equities_prices'" 2>/dev/null); \
+	if [ -n "$$engine" ]; then \
+		case "$$engine" in \
+			*ReplacingMergeTree) ;; \
+			*) echo "FAIL: analytics.equities_prices engine is $$engine; run 'make nuke' or migrate" >&2; exit 1 ;; \
+		esac; \
+	fi; \
+	for f in init/clickhouse/0[2-9]_*.sql; do \
+		$(COMPOSE) exec -T clickhouse clickhouse-client < $$f || exit 1; \
+	done
+
+job-reset: ## Cancel and resubmit the Flink job (after code or topic changes)
+	@job=""; \
+	for _ in $$(seq 1 60); do \
+		job=$$($(COMPOSE) exec -T jobmanager flink list -r -m jobmanager:8081 2>/dev/null | grep 'Kafka_to_ClickHouse_Pipeline' | grep -oE '[0-9a-f]{32}' | head -1); \
+		[ -n "$$job" ] && break; \
+		sleep 2; \
+	done; \
+	if [ -n "$$job" ]; then \
+		$(COMPOSE) exec -T jobmanager flink cancel -m jobmanager:8081 $$job; \
+		for _ in $$(seq 1 30); do \
+			$(COMPOSE) exec -T jobmanager flink list -r -m jobmanager:8081 2>/dev/null | grep -q "$$job" || break; \
+			sleep 1; \
+		done; \
+	fi; \
+	$(COMPOSE) run --rm flink-submit
 
 query: ## Run a ClickHouse query (SQL='SELECT ...')
 	@test -n "$(SQL)" || (echo "usage: make query SQL='SELECT ...'"; exit 1)
@@ -101,6 +140,6 @@ check: lint test ## Lint, unit tests and compose validation
 
 nuke: ## DANGER: wipe all data and restart
 	$(COMPOSE) down -v
-	docker run --rm -v "$(CURDIR)/volumes:/v" alpine sh -c 'rm -rf /v/* && mkdir -p /v/zookeeper-data /v/zookeeper-log /v/kafka-data /v/grafana-data && chown -R 1000:1000 /v/zookeeper-data /v/zookeeper-log /v/kafka-data && chown -R 472:472 /v/grafana-data'
+	docker run --rm -v "$(CURDIR)/volumes:/v" alpine sh -c 'rm -rf /v/* && mkdir -p /v/zookeeper-data /v/zookeeper-log /v/kafka-data-1 /v/kafka-data-2 /v/kafka-data-3 /v/grafana-data && chown -R 1000:1000 /v/zookeeper-data /v/zookeeper-log /v/kafka-data-1 /v/kafka-data-2 /v/kafka-data-3 && chown -R 472:472 /v/grafana-data'
 	$(COMPOSE) up -d
 	@echo "started; run 'make smoke' to verify"

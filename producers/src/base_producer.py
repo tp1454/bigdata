@@ -2,6 +2,7 @@
 
 import json
 import logging
+import time
 from abc import ABC, abstractmethod
 
 from confluent_kafka import Producer
@@ -17,11 +18,13 @@ class BaseProducer(ABC):
         self._dropped = 0
         self.producer = Producer({
             "bootstrap.servers": config.KAFKA_BROKER,
+            "acks": "all",
+            "enable.idempotence": True,
             "queue.buffering.max.messages": 10000,
             "queue.buffering.max.kbytes": 65536,
         })
 
-    def publish(self, key, value):
+    def publish(self, key, value, weight=1):
         record = dict(key=str(key), value=json.dumps(value),
                       callback=self._delivery_report)
         # One retry after polling; never block the websocket thread.
@@ -33,7 +36,7 @@ class BaseProducer(ABC):
                 if attempt == 0:
                     self.producer.poll(0.1)
                     continue
-                self._dropped += 1
+                self._dropped += weight
                 if self._dropped == 1 or self._dropped % 1000 == 0:
                     log.warning("producer queue full; dropped %d records",
                                 self._dropped)
@@ -48,6 +51,17 @@ class BaseProducer(ABC):
             log.error("Delivery failed for %s: %s", msg.key(), err)
         else:
             log.debug("Delivered to %s[%d]", msg.topic(), msg.partition())
+
+    def poll_forever(self, fetch, interval, retry=None):
+        """Run fetch() forever; retry sooner if it fails or returns False."""
+        while True:
+            try:
+                ok = fetch()
+            except Exception as e:
+                log.error("poll failed: %s", e)
+                ok = False
+            self.flush()
+            time.sleep(interval if ok else (retry or interval))
 
     @abstractmethod
     def run(self):

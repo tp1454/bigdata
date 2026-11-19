@@ -5,16 +5,20 @@ import os
 import queue
 import signal
 import threading
+import time
 
 from binance import ThreadedWebsocketManager
 
 from .. import config
 from ..base_producer import BaseProducer
+from .trade_batch import grouped_trades
 
 log = logging.getLogger(__name__)
 
 SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
 QUEUE_MAX = 1000
+BATCH_SIZE = 200
+FLUSH_SECONDS = 1.0
 # python-binance's default (100) overflows on raw trade streams.
 SOCKET_QUEUE_MAX = 10000
 
@@ -44,22 +48,36 @@ class BinanceProducer(BaseProducer):
         except queue.Full:
             log.warning("dropping trade; queue full")
 
-    def _drain(self):
-        while True:
-            msg = self._q.get()
-            if msg is None:
-                break
+    def _publish_batch(self, batch):
+        if not batch:
+            return
+        for symbol, trades in grouped_trades(batch).items():
             try:
-                self.publish(msg["s"], {
-                    "symbol": msg["s"],
-                    "timestamp": msg["T"],
-                    "price": float(msg["p"]),
-                    "quantity": float(msg["q"]),
-                    "trade_id": msg["a"],
+                self.publish(symbol, {
                     "source": "binance",
-                })
+                    "trades": trades,
+                }, weight=len(trades))
             except Exception:
-                log.exception("failed to publish trade")
+                log.exception("failed to publish trade batch for %s", symbol)
+
+    def _drain(self):
+        batch = []
+        last = time.time()
+        while True:
+            try:
+                msg = self._q.get(timeout=0.2)
+            except queue.Empty:
+                msg = False
+            if msg is None:
+                self._publish_batch(batch)
+                break
+            if msg:
+                batch.append(msg)
+            now = time.time()
+            if batch and (len(batch) >= BATCH_SIZE or now - last >= FLUSH_SECONDS):
+                self._publish_batch(batch)
+                batch = []
+                last = now
         self.flush()
 
     def _shutdown(self, signum, frame):

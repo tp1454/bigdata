@@ -29,6 +29,48 @@ def _to_date(s):
     return date.fromisoformat(str(s)[:10])
 
 
+def _trade_rows(d):
+    """Expand a batched trade message; accept the old single-trade shape."""
+    if "trades" not in d:
+        return iter([(
+            d["symbol"],
+            _ms_to_dt(d["timestamp"]),
+            float(d["price"]),
+            float(d["quantity"]),
+            int(d["trade_id"]),
+            d["source"],
+        )])
+    return iter([[
+        (
+            t.get("symbol") or d["symbol"],
+            _ms_to_dt(t["timestamp"]),
+            float(t["price"]),
+            float(t["quantity"]),
+            int(t["trade_id"]),
+            d.get("source", "binance"),
+        )
+        for t in d["trades"]
+    ]])
+
+
+def _fundamental_rows(d):
+    """Expand a statement message; empty batches are dead-lettered."""
+    if not d.get("rows"):
+        raise ValueError("empty fundamentals batch")
+    return iter([[
+        (
+            d["symbol"],
+            d["statement"],
+            d["period"],
+            _to_date(d["end_date"]),
+            item["line_item"],
+            float(item["value"]),
+            d["source"],
+        )
+        for item in d["rows"]
+    ]])
+
+
 # ==========================================
 # 2. HÀM XỬ LÝ ĐẶC BIỆT (1 JSON -> NHIỀU DÒNG)
 # ==========================================
@@ -82,14 +124,7 @@ TOPICS = {
     "crypto.trades": (
         "crypto_trades",
         ["symbol", "timestamp", "price", "quantity", "trade_id", "source"],
-        lambda d: iter([(
-            d["symbol"], 
-            _ms_to_dt(d["timestamp"]), 
-            float(d["price"]),
-            float(d["quantity"]), 
-            int(d["trade_id"]), 
-            d["source"]
-        )]),
+        _trade_rows,
     ),
     "crypto.market": (
         "crypto_market_data",
@@ -100,6 +135,21 @@ TOPICS = {
             float(d["price"]),
             d.get("market_cap"), 
             d.get("volume_24h"), 
+            d["source"]
+        )]),
+    ),
+    "crypto.ohlcv": (
+        "crypto_ohlcv",
+        ["symbol", "interval", "timestamp", "open", "high", "low", "close", "volume", "source"],
+        lambda d: iter([(
+            d["symbol"],
+            d["interval"],
+            _ms_to_dt(d["timestamp"]),
+            float(d["open"]),
+            float(d["high"]),
+            float(d["low"]),
+            float(d["close"]),
+            float(d["volume"]),
             d["source"]
         )]),
     ),
@@ -128,6 +178,37 @@ TOPICS = {
         ["cik", "entity_name", "sic", "accession_number", "filing_date", "form", "primary_document", "source"],
         _sec_rows,
     ),
+    "fundamentals.actions": (
+        "corporate_actions",
+        ["symbol", "action", "action_date", "value", "source"],
+        lambda d: iter([(
+            d["symbol"],
+            d["action"],
+            _to_date(d["action_date"]),
+            float(d["value"]),
+            d["source"]
+        )]),
+    ),
+    "fundamentals.statements": (
+        "fundamentals",
+        ["symbol", "statement", "period", "end_date", "line_item", "value", "source"],
+        _fundamental_rows,
+    ),
+    "fundamentals.insider": (
+        "insider_transactions",
+        ["symbol", "insider", "position", "transaction", "transaction_date", "shares", "value", "ownership", "source"],
+        lambda d: iter([(
+            d["symbol"],
+            d["insider"],
+            d["position"],
+            d["transaction"],
+            _to_date(d["transaction_date"]),
+            float(d["shares"]),
+            d.get("value"),
+            d["ownership"],
+            d["source"]
+        )]),
+    ),
 }
 
 
@@ -153,7 +234,7 @@ def parse_kafka_message(topic, raw_json):
             # Trả về tên bảng kèm theo dữ liệu để ClickHouseSink biết cần ghi vào đâu
             yield (table_name, row)
             
-    except (KeyError, TypeError, ValueError) as e:
+    except (KeyError, OverflowError, OSError, TypeError, ValueError) as e:
         # Keep the record for inspection instead of dropping it silently.
         log.warning("Bad record on %s: %s", topic, e)
         yield (ERROR_TABLE, (topic, str(e), str(raw_json)[:RAW_LIMIT]))

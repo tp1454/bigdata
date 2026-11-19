@@ -13,17 +13,21 @@ def _required(name):
 # ==========================================
 # KAFKA
 # ==========================================
-KAFKA_BROKER = os.getenv("KAFKA_BROKER", "kafka:29092")
+KAFKA_BROKER = os.getenv("KAFKA_BROKER", "kafka-1:29092,kafka-2:29092,kafka-3:29092")
 KAFKA_GROUP_ID = os.getenv("KAFKA_GROUP_ID", "flink_consumer_group")
 
 # Same order as init/kafka/create-topics.sh
 KAFKA_TOPICS = [
     "equities.prices",
     "crypto.trades",
+    "crypto.ohlcv",
     "crypto.market",
     "forex.rates",
     "macro.indicators",
     "fundamentals.filings",
+    "fundamentals.actions",
+    "fundamentals.statements",
+    "fundamentals.insider",
 ]
 
 # ==========================================
