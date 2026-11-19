@@ -20,10 +20,14 @@ KAFKA_GROUP_ID = os.getenv("KAFKA_GROUP_ID", "flink_consumer_group")
 KAFKA_TOPICS = [
     "equities.prices",
     "crypto.trades",
+    "crypto.ohlcv",
     "crypto.market",
     "forex.rates",
     "macro.indicators",
     "fundamentals.filings",
+    "fundamentals.actions",
+    "fundamentals.statements",
+    "fundamentals.insider",
 ]
 
 # ==========================================

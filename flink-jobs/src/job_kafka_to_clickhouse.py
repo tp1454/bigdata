@@ -67,7 +67,7 @@ class ClickHouseSink(MapFunction):
         try:
             self.client.insert(
                 table=table_name,
-                data=[row],
+                data=row if isinstance(row, list) else [row],
                 column_names=column_names,
                 settings={"async_insert": 1, "wait_for_async_insert": 1},
             )
