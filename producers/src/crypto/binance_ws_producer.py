@@ -11,6 +11,7 @@ from binance import ThreadedWebsocketManager
 
 from .. import config
 from ..base_producer import BaseProducer
+from .trade_batch import grouped_trades
 
 log = logging.getLogger(__name__)
 
@@ -47,26 +48,17 @@ class BinanceProducer(BaseProducer):
         except queue.Full:
             log.warning("dropping trade; queue full")
 
-    @staticmethod
-    def _trade_row(msg):
-        return {
-            "symbol": msg["s"],
-            "timestamp": msg["T"],
-            "price": float(msg["p"]),
-            "quantity": float(msg["q"]),
-            "trade_id": msg["a"],
-        }
-
     def _publish_batch(self, batch):
         if not batch:
             return
-        try:
-            self.publish(batch[0]["s"], {
-                "source": "binance",
-                "trades": [self._trade_row(msg) for msg in batch],
-            })
-        except Exception:
-            log.exception("failed to publish trade batch")
+        for symbol, trades in grouped_trades(batch).items():
+            try:
+                self.publish(symbol, {
+                    "source": "binance",
+                    "trades": trades,
+                }, weight=len(trades))
+            except Exception:
+                log.exception("failed to publish trade batch for %s", symbol)
 
     def _drain(self):
         batch = []
