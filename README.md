@@ -5,7 +5,7 @@ Kafka, a PyFlink job parses and batches them into ClickHouse, and Grafana
 reads ClickHouse.
 
 ```
-producers (13) --> Kafka (10 topics) --> Flink (parse + sink) --> ClickHouse (analytics.*) --> Grafana (2 dashboards)
+producers (13) --> Kafka (3 brokers, 10 topics) --> Flink (parse + sink) --> ClickHouse (analytics.*) --> Grafana (2 dashboards)
 ```
 
 ## Scope and data terms
@@ -38,8 +38,11 @@ make url          # Grafana / Flink UI / ClickHouse / Kafka endpoints
 
 The first start creates the Kafka topics and the ClickHouse schema. On an
 existing volume, `make deploy` re-applies topics and schema and resubmits the
-Flink job. Use `make nuke` only when the schema changed incompatibly; it
-deletes all local data.
+Flink job. Use `make nuke` only when the schema or broker layout changed
+incompatibly; it deletes all local data. The RF3 layout uses new
+`volumes/kafka-data-1..3` and a fresh Zookeeper, so an old single-broker
+cluster needs `make nuke` (or a `kafka-reassign-partitions` migration); the
+topic script does not rewrite existing RF1 assignments.
 
 ## Services and ports
 
@@ -48,7 +51,7 @@ deletes all local data.
 | Grafana      | http://localhost:3000         |
 | Flink UI     | http://localhost:8081         |
 | ClickHouse   | http://localhost:8123         |
-| Kafka        | localhost:29092               |
+| Kafka        | localhost:29092 (bootstrap; 29092-29094) |
 
 Credentials and ports come from `.env` (see `.env.example`). Compose refuses
 to start without `CLICKHOUSE_PASSWORD` and `GRAFANA_ADMIN_PASSWORD`.
@@ -132,7 +135,7 @@ silently stops moving data.
 | `CLICKHOUSE_PASSWORD`    | yes      | ClickHouse `default` user password    |
 | `GRAFANA_ADMIN_PASSWORD` | yes      | Grafana admin password                |
 | `SEC_CONTACT_EMAIL`      | for SEC  | real contact, SEC requires it in UA   |
-| `CLICKHOUSE_*`, `GRAFANA_PORT`, `KAFKA_PORT` | no | ports/users/db overrides |
+| `CLICKHOUSE_*`, `GRAFANA_PORT`, `KAFKA_PORT`, `KAFKA_PORT_2/3` | no | ports/users/db overrides |
 
 ## Layout
 
@@ -161,8 +164,10 @@ silently stops moving data.
 
 ## Known limits
 
-- Single Kafka broker on Zookeeper, replication factor 1: no HA. KRaft would
-  remove Zookeeper; not migrated here.
+- Three Kafka brokers (RF3, min ISR 2) on one Zookeeper. Zookeeper is still
+  a single point, and ClickHouse is a single instance with
+  `ReplacingMergeTree` rather than a replicated table. KRaft and ClickHouse
+  replication are not migrated here.
 - Flink checkpoints live in JobManager memory: task failures recover, a
   JobManager restart loses the job. Add a durable state backend and HA for
   anything beyond local use.
