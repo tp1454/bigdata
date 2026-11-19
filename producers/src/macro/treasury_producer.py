@@ -1,16 +1,24 @@
-"""Fetch US Treasury average interest rates into the macro topic."""
+"""Fetch the US Treasury daily par yield curve into the macro topic."""
 
 import logging
 import time
+from datetime import datetime, timezone
 
 import requests
 
 from .. import config
 from ..base_producer import BaseProducer
+from .treasury_yield import parse_yield_csv
 
 log = logging.getLogger(__name__)
 
-INTERVAL_SECONDS = 86400
+INTERVAL_SECONDS = 86400  # daily
+RETRY_SECONDS = 300       # retry a failed fetch sooner
+YIELD_CSV_URL = (
+    "https://home.treasury.gov/resource-center/data-chart-center/"
+    "interest-rates/daily-treasury-rates.csv/{year}/all"
+    "?type=daily_treasury_yield_curve&field_tdr_date_value={year}&page&_format=csv"
+)
 
 
 class TreasuryProducer(BaseProducer):
@@ -20,28 +28,25 @@ class TreasuryProducer(BaseProducer):
     def run(self):
         while True:
             try:
-                # Average interest rates on Treasury securities.
-                # shortcut: not the par yield curve; switch feeds if a true
-                # yield curve is needed.
-                url = "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v2/accounting/od/avg_interest_rates"
-                params = {
-                    "sort": "-record_date",
-                    "page[size]": "1",
-                }
-                resp = requests.get(url, params=params, timeout=15)
+                year = datetime.now(timezone.utc).year
+                resp = requests.get(YIELD_CSV_URL.format(year=year), timeout=60)
                 resp.raise_for_status()
-
-                for row in resp.json()["data"]:
-                    self.publish("TREASURY_AVG_INTEREST_RATE", {
-                        "indicator": "TREASURY_AVG_INTEREST_RATE",
-                        "timestamp": row["record_date"],
-                        "value": float(row["avg_interest_rate_amt"]),
+                date_iso, points = parse_yield_csv(resp.text)
+                if not points:
+                    log.warning("Treasury yield CSV had no rows for %s", year)
+                for indicator, value in points:
+                    self.publish(indicator, {
+                        "indicator": indicator,
+                        "timestamp": date_iso,
+                        "value": value,
                         "source": "treasury",
                     })
                 self.flush()
+                delay = INTERVAL_SECONDS
             except Exception as e:
-                log.error("Treasury fetch failed: %s", e)
-            time.sleep(INTERVAL_SECONDS)
+                log.error("Treasury yield fetch failed: %s", e)
+                delay = RETRY_SECONDS
+            time.sleep(delay)
 
 
 if __name__ == "__main__":
