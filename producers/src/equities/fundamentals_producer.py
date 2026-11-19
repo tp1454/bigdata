@@ -1,7 +1,6 @@
 """Publish income, balance sheet, cash flow and earnings rows."""
 
 import logging
-import time
 
 import yfinance as yf
 
@@ -45,41 +44,42 @@ class FundamentalsProducer(BaseProducer):
                 "source": "yahoo",
             })
 
-    def run(self):
-        while True:
-            for symbol in SYMBOLS:
-                try:
-                    ticker = yf.Ticker(symbol)
-                    for statement, attrs in STATEMENTS.items():
-                        for period, attr in zip(("annual", "quarterly"), attrs):
-                            frame = getattr(ticker, attr)
-                            if frame is not None and not frame.empty:
-                                self._publish_frame(symbol, statement, period, frame)
+    def _fetch(self):
+        for symbol in SYMBOLS:
+            try:
+                ticker = yf.Ticker(symbol)
+                for statement, attrs in STATEMENTS.items():
+                    for period, attr in zip(("annual", "quarterly"), attrs):
+                        frame = getattr(ticker, attr)
+                        if frame is not None and not frame.empty:
+                            self._publish_frame(symbol, statement, period, frame)
 
-                    earnings = ticker.earnings_history
-                    if earnings is None or earnings.empty:
+                earnings = ticker.earnings_history
+                if earnings is None or earnings.empty:
+                    continue
+                for period_end, row in earnings.iterrows():
+                    rows = []
+                    for line_item in EARNINGS:
+                        value = number(row.get(line_item))
+                        if value is not None:
+                            rows.append({"line_item": line_item, "value": value})
+                    if not rows:
                         continue
-                    for period_end, row in earnings.iterrows():
-                        rows = []
-                        for line_item in EARNINGS:
-                            value = number(row.get(line_item))
-                            if value is not None:
-                                rows.append({"line_item": line_item, "value": value})
-                        if not rows:
-                            continue
-                        end_date = period_end.date().isoformat()
-                        self.publish(f"{symbol}:earnings:{end_date}", {
-                            "symbol": symbol,
-                            "statement": "earnings",
-                            "period": "quarterly",
-                            "end_date": end_date,
-                            "rows": rows,
-                            "source": "yahoo",
-                        })
-                except Exception as e:
-                    log.error("Fundamentals fetch failed for %s: %s", symbol, e)
-            self.flush()
-            time.sleep(INTERVAL_SECONDS)
+                    end_date = period_end.date().isoformat()
+                    self.publish(f"{symbol}:earnings:{end_date}", {
+                        "symbol": symbol,
+                        "statement": "earnings",
+                        "period": "quarterly",
+                        "end_date": end_date,
+                        "rows": rows,
+                        "source": "yahoo",
+                    })
+            except Exception as e:
+                log.error("Fundamentals fetch failed for %s: %s", symbol, e)
+        return True
+
+    def run(self):
+        self.poll_forever(self._fetch, INTERVAL_SECONDS)
 
 
 if __name__ == "__main__":

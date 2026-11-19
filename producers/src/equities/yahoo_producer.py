@@ -8,6 +8,7 @@ import yfinance as yf
 
 from .. import config
 from ..base_producer import BaseProducer
+from .yahoo_bars import bar_volume, should_publish
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class YahooProducer(BaseProducer):
                 newest = history.index[-1]
                 for ts, row in history.iterrows():
                     # Skip bars already sent; the newest bar keeps moving.
-                    if last is not None and ts <= last and ts != newest:
+                    if not should_publish(ts, last, newest):
                         continue
                     # numpy scalars aren't JSON-serializable
                     self.publish(symbol, {
@@ -40,7 +41,7 @@ class YahooProducer(BaseProducer):
                         "high": float(row["High"]),
                         "low": float(row["Low"]),
                         "close": float(row["Close"]),
-                        "volume": int(row["Volume"]),
+                        "volume": bar_volume(row["Volume"]),
                     })
                 self.last_ts[symbol] = newest
             self.flush()

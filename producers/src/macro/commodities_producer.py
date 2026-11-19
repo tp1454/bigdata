@@ -1,7 +1,6 @@
 """Fetch commodity futures closes from Yahoo Finance into the macro topic."""
 
 import logging
-import time
 
 import yfinance as yf
 
@@ -31,28 +30,29 @@ class CommoditiesProducer(BaseProducer):
     def __init__(self):
         super().__init__(config.TOPIC_MACRO)
 
+    def _fetch(self):
+        for ticker, indicator in SERIES.items():
+            try:
+                history = yf.Ticker(ticker).history(period="5d", interval="1d")
+                if history.empty:
+                    log.warning("No price history for %s", ticker)
+                    continue
+                close = float(history["Close"].iloc[-1])
+                if close != close:  # NaN on an incomplete/expired contract
+                    log.warning("Skipping NaN close for %s", ticker)
+                    continue
+                self.publish(indicator, {
+                    "indicator": indicator,
+                    "timestamp": history.index[-1].date().isoformat(),
+                    "value": close,
+                    "source": "yahoo",
+                })
+            except Exception as e:
+                log.error("Commodity fetch failed for %s: %s", ticker, e)
+        return True
+
     def run(self):
-        while True:
-            for ticker, indicator in SERIES.items():
-                try:
-                    history = yf.Ticker(ticker).history(period="5d", interval="1d")
-                    if history.empty:
-                        log.warning("No price history for %s", ticker)
-                        continue
-                    close = float(history["Close"].iloc[-1])
-                    if close != close:  # NaN on an incomplete/expired contract
-                        log.warning("Skipping NaN close for %s", ticker)
-                        continue
-                    self.publish(indicator, {
-                        "indicator": indicator,
-                        "timestamp": history.index[-1].date().isoformat(),
-                        "value": close,
-                        "source": "yahoo",
-                    })
-                except Exception as e:
-                    log.error("Commodity fetch failed for %s: %s", ticker, e)
-            self.flush()
-            time.sleep(INTERVAL_SECONDS)
+        self.poll_forever(self._fetch, INTERVAL_SECONDS)
 
 
 if __name__ == "__main__":
