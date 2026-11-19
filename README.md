@@ -5,8 +5,28 @@ Kafka, a PyFlink job parses and batches them into ClickHouse, and Grafana
 reads ClickHouse.
 
 ```
-producers (7) --> Kafka (6 topics) --> Flink (parse + sink) --> ClickHouse (analytics.*) --> Grafana (2 dashboards)
+producers (13) --> Kafka (10 topics) --> Flink (parse + sink) --> ClickHouse (analytics.*) --> Grafana (2 dashboards)
 ```
+
+## Scope and data terms
+
+This is a local, single-user demo for personal, educational, or internal use.
+It is not affiliated with Alpha Vantage and is not a data-redistribution
+service. Do not expose it as a public or Alpha Vantage-compatible API: free
+access to an upstream source is not a license to redistribute its data.
+
+| Source | Used for | Before scaling |
+|---|---|---|
+| Yahoo Finance (`yfinance`) | equities, indices, commodities, fundamentals, insiders, corporate actions | Unofficial; check Yahoo's terms and rate limits |
+| Binance, CoinGecko | crypto trades, market data, klines | Check API terms, rate limits, and redistribution rules |
+| Frankfurter (ECB) | FX rates | Check terms and attribution requirements |
+| BLS, US Treasury | macro series, yield curve | Public data; respect each site's terms and rate limits |
+| SEC EDGAR | filings | Set a real `SEC_CONTACT_EMAIL`; follow SEC's fair-access policy |
+
+Keep credentials in `.env` (gitignored) and never commit them. For commercial
+use, redistribution, or an SLA, obtain a license from the data source or use a
+licensed provider. Confirm each source's current terms; this is not legal
+advice.
 
 ## Quickstart
 
@@ -16,12 +36,10 @@ make deploy       # build, start, then run the smoke check
 make url          # Grafana / Flink UI / ClickHouse / Kafka endpoints
 ```
 
-The first start creates the Kafka topics and the ClickHouse schema. If the
-stack has run before with an older schema, wipe local data first:
-
-```bash
-make nuke         # DANGER: deletes all local data and restarts
-```
+The first start creates the Kafka topics and the ClickHouse schema. On an
+existing volume, `make deploy` re-applies topics and schema and resubmits the
+Flink job. Use `make nuke` only when the schema changed incompatibly; it
+deletes all local data.
 
 ## Services and ports
 
@@ -39,16 +57,21 @@ to start without `CLICKHOUSE_PASSWORD` and `GRAFANA_ADMIN_PASSWORD`.
 
 | Kafka topic              | ClickHouse table                  | Producer                  |
 |--------------------------|-----------------------------------|---------------------------|
-| `equities.prices`        | `analytics.equities_prices`       | Yahoo Finance             |
+| `equities.prices`        | `analytics.equities_prices`       | Yahoo Finance, indices    |
 | `crypto.trades`          | `analytics.crypto_trades`         | Binance websocket         |
+| `crypto.ohlcv`           | `analytics.crypto_ohlcv`          | Binance klines            |
 | `crypto.market`          | `analytics.crypto_market_data`    | CoinGecko                 |
 | `forex.rates`            | `analytics.forex_rates`           | Frankfurter (ECB)         |
-| `macro.indicators`       | `analytics.macro_indicators`      | BLS, US Treasury          |
+| `macro.indicators`       | `analytics.macro_indicators`      | BLS, US Treasury, Yahoo   |
 | `fundamentals.filings`   | `analytics.company_filings`       | SEC EDGAR                 |
+| `fundamentals.actions`   | `analytics.corporate_actions`     | Yahoo dividends/splits    |
+| `fundamentals.statements` | `analytics.fundamentals`         | Yahoo statements/earnings |
+| `fundamentals.insider`   | `analytics.insider_transactions`  | Yahoo insiders            |
 | (parse failures)         | `analytics.pipeline_errors`       | Flink dead-letter         |
 
 Topics get 3 partitions. Tick topics keep 7 days in Kafka; ClickHouse keeps
-90 days of tick data. `fundamentals.filings` is compacted.
+90 days of tick data. Fundamentals topics keep 30 days, and
+`fundamentals.filings` is compacted.
 
 ## Delivery semantics
 
@@ -66,6 +89,16 @@ dashboards do) or `FINAL` before relying on uniqueness.
 Unparseable records are written to `pipeline_errors` (topic, error, truncated
 raw payload) instead of being dropped silently.
 
+## Indicators and analytics
+
+`analytics.equities_prices_clean` dedupes replays and drops impossible bars.
+`analytics.equities_indicators` builds SMA(20/50/200), Bollinger bands,
+simple-average RSI(14) and ATR(14) (`rsi_14_sma`, `atr_14_sma`), 1/5-bar
+returns, 20-bar volatility, and a 20-bar volume average over the stored
+bars (1-minute for equities, daily for indices).
+Both are views, so they stay current without a write job; run
+`make schema` once on an existing volume.
+
 ## Make targets
 
 Run `make` or `make help` for the full list.
@@ -74,12 +107,14 @@ Run `make` or `make help` for the full list.
 |------------------------|------------------------------------------------------|
 | `make setup`           | create `.env`, build images                          |
 | `make dev`             | create `.venv` with pytest/ruff                      |
-| `make deploy`          | build + start + `make smoke`                         |
+| `make deploy`          | build + start + topics/schema + job reset + smoke     |
 | `make redeploy`        | recreate containers with current config              |
 | `make smoke`           | end-to-end check: services, job, topics, new rows    |
 | `make check`           | lint + unit tests + compose validation               |
 | `make test` / `lint`   | pytest / ruff                                        |
 | `make check-data`      | row counts and latest timestamp per table            |
+| `make schema`          | apply ClickHouse schema + views (idempotent)         |
+| `make job-reset`       | cancel and resubmit the Flink job                    |
 | `make query SQL='...'` | one-off ClickHouse query                             |
 | `make feed TOPIC=...`  | tail Kafka messages                                  |
 | `make test-topics`     | topic partitions and message counts                  |
@@ -111,10 +146,10 @@ silently stops moving data.
 │   ├── kafka/create-topics.sh  topics, partitions, retention
 │   └── clickhouse/01_init.sql  analytics schema
 ├── producers/src/              one process per data source
-│   ├── equities/               Yahoo Finance, SEC EDGAR
-│   ├── crypto/                 Binance websocket, CoinGecko
+│   ├── equities/               Yahoo prices, indices, fundamentals, SEC EDGAR
+│   ├── crypto/                 Binance websocket, Binance klines, CoinGecko
 │   ├── forex/                  Frankfurter (ECB)
-│   └── macro/                  BLS, US Treasury
+│   └── macro/                  BLS, US Treasury, commodities
 ├── flink-jobs/src/             PyFlink job, transforms, config
 ├── configs/grafana/            datasource + dashboard provisioning
 ├── dashboards/                 Market Analytics, Pipeline Health
@@ -136,3 +171,6 @@ silently stops moving data.
   start needs network access.
 - 90-day ClickHouse TTL and 7-day Kafka retention are demo choices; change
   them in `init/clickhouse/01_init.sql` and `init/kafka/create-topics.sh`.
+- Data-source terms: this stack is for local/personal use. Do not publish a
+  public or Alpha Vantage-compatible API from these feeds; see
+  [Scope and data terms](#scope-and-data-terms).
