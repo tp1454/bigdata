@@ -85,9 +85,11 @@ schema: ## Apply ClickHouse schema and views (idempotent)
 		sleep 2; \
 	done; \
 	engine=$$($(COMPOSE) exec -T clickhouse clickhouse-client --query "SELECT engine FROM system.tables WHERE database='analytics' AND name='equities_prices'" 2>/dev/null); \
-	if [ -n "$$engine" ] && [ "$$engine" != "ReplacingMergeTree" ]; then \
-		echo "FAIL: analytics.equities_prices engine is $$engine; run 'make nuke' or migrate" >&2; \
-		exit 1; \
+	if [ -n "$$engine" ]; then \
+		case "$$engine" in \
+			*ReplacingMergeTree) ;; \
+			*) echo "FAIL: analytics.equities_prices engine is $$engine; run 'make nuke' or migrate" >&2; exit 1 ;; \
+		esac; \
 	fi; \
 	for f in init/clickhouse/0[2-9]_*.sql; do \
 		$(COMPOSE) exec -T clickhouse clickhouse-client < $$f || exit 1; \
@@ -96,7 +98,7 @@ schema: ## Apply ClickHouse schema and views (idempotent)
 job-reset: ## Cancel and resubmit the Flink job (after code or topic changes)
 	@job=""; \
 	for _ in $$(seq 1 60); do \
-		job=$$($(COMPOSE) exec -T jobmanager flink list -r -m jobmanager:8081 2>/dev/null | grep -oE '[0-9a-f]{32}' | head -1); \
+		job=$$($(COMPOSE) exec -T jobmanager flink list -r -m jobmanager:8081 2>/dev/null | grep 'Kafka_to_ClickHouse_Pipeline' | grep -oE '[0-9a-f]{32}' | head -1); \
 		[ -n "$$job" ] && break; \
 		sleep 2; \
 	done; \
