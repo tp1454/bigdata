@@ -32,6 +32,24 @@ def test_crypto_trades_ms_epoch():
     assert row[2:] == (42.5, 0.1, 7, "binance")
 
 
+def test_crypto_trades_batch():
+    rows = one("crypto.trades", {
+        "source": "binance",
+        "trades": [
+            {"symbol": "BTCUSDT", "timestamp": 1_700_000_000_000,
+             "price": "1", "quantity": "2", "trade_id": 11},
+            {"symbol": "BTCUSDT", "timestamp": 1_700_000_001_000,
+             "price": "3", "quantity": "4", "trade_id": 12},
+        ],
+    })
+    assert rows == [("crypto_trades", [
+        ("BTCUSDT", datetime.fromtimestamp(1_700_000_000, tz=timezone.utc),
+         1.0, 2.0, 11, "binance"),
+        ("BTCUSDT", datetime.fromtimestamp(1_700_000_001, tz=timezone.utc),
+         3.0, 4.0, 12, "binance"),
+    ])]
+
+
 def test_crypto_ohlcv():
     rows = one("crypto.ohlcv", {
         "symbol": "BTCUSDT", "interval": "1d", "timestamp": 1_700_000_000_000,

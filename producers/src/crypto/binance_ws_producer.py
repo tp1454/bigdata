@@ -5,6 +5,7 @@ import os
 import queue
 import signal
 import threading
+import time
 
 from binance import ThreadedWebsocketManager
 
@@ -15,6 +16,8 @@ log = logging.getLogger(__name__)
 
 SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
 QUEUE_MAX = 1000
+BATCH_SIZE = 200
+FLUSH_SECONDS = 1.0
 # python-binance's default (100) overflows on raw trade streams.
 SOCKET_QUEUE_MAX = 10000
 
@@ -44,22 +47,45 @@ class BinanceProducer(BaseProducer):
         except queue.Full:
             log.warning("dropping trade; queue full")
 
+    @staticmethod
+    def _trade_row(msg):
+        return {
+            "symbol": msg["s"],
+            "timestamp": msg["T"],
+            "price": float(msg["p"]),
+            "quantity": float(msg["q"]),
+            "trade_id": msg["a"],
+        }
+
+    def _publish_batch(self, batch):
+        if not batch:
+            return
+        try:
+            self.publish(batch[0]["s"], {
+                "source": "binance",
+                "trades": [self._trade_row(msg) for msg in batch],
+            })
+        except Exception:
+            log.exception("failed to publish trade batch")
+
     def _drain(self):
+        batch = []
+        last = time.time()
         while True:
-            msg = self._q.get()
-            if msg is None:
-                break
             try:
-                self.publish(msg["s"], {
-                    "symbol": msg["s"],
-                    "timestamp": msg["T"],
-                    "price": float(msg["p"]),
-                    "quantity": float(msg["q"]),
-                    "trade_id": msg["a"],
-                    "source": "binance",
-                })
-            except Exception:
-                log.exception("failed to publish trade")
+                msg = self._q.get(timeout=0.2)
+            except queue.Empty:
+                msg = False
+            if msg is None:
+                self._publish_batch(batch)
+                break
+            if msg:
+                batch.append(msg)
+            now = time.time()
+            if batch and (len(batch) >= BATCH_SIZE or now - last >= FLUSH_SECONDS):
+                self._publish_batch(batch)
+                batch = []
+                last = now
         self.flush()
 
     def _shutdown(self, signum, frame):

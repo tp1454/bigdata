@@ -29,6 +29,30 @@ def _to_date(s):
     return date.fromisoformat(str(s)[:10])
 
 
+def _trade_rows(d):
+    """Expand a batched trade message; accept the old single-trade shape."""
+    if "trades" not in d:
+        return iter([(
+            d["symbol"],
+            _ms_to_dt(d["timestamp"]),
+            float(d["price"]),
+            float(d["quantity"]),
+            int(d["trade_id"]),
+            d["source"],
+        )])
+    return iter([[
+        (
+            t.get("symbol") or d["symbol"],
+            _ms_to_dt(t["timestamp"]),
+            float(t["price"]),
+            float(t["quantity"]),
+            int(t["trade_id"]),
+            d.get("source", "binance"),
+        )
+        for t in d["trades"]
+    ]])
+
+
 # ==========================================
 # 2. HÀM XỬ LÝ ĐẶC BIỆT (1 JSON -> NHIỀU DÒNG)
 # ==========================================
@@ -82,14 +106,7 @@ TOPICS = {
     "crypto.trades": (
         "crypto_trades",
         ["symbol", "timestamp", "price", "quantity", "trade_id", "source"],
-        lambda d: iter([(
-            d["symbol"], 
-            _ms_to_dt(d["timestamp"]), 
-            float(d["price"]),
-            float(d["quantity"]), 
-            int(d["trade_id"]), 
-            d["source"]
-        )]),
+        _trade_rows,
     ),
     "crypto.market": (
         "crypto_market_data",
