@@ -111,6 +111,9 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
       GF_INSTALL_PLUGINS: grafana-clickhouse-datasource
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
     mem_limit: 512m
     volumes:
       - ./volumes/grafana-data:/var/lib/grafana
@@ -132,10 +135,20 @@ services:
     container_name: yahoo-producer
     command: python -m src.equities.yahoo_producer
 
+  index-producer:
+    <<: *producer
+    container_name: index-producer
+    command: python -m src.equities.index_producer
+
   binance-producer:
     <<: *producer
     container_name: binance-producer
     command: python -m src.crypto.binance_ws_producer
+
+  binance-ohlcv-producer:
+    <<: *producer
+    container_name: binance-ohlcv-producer
+    command: python -m src.crypto.binance_ohlcv_producer
 
   forex-producer:
     <<: *producer
@@ -155,6 +168,21 @@ services:
       KAFKA_BROKER: kafka:29092
       SEC_CONTACT_EMAIL: ${SEC_CONTACT_EMAIL:-}
 
+  corporate-actions-producer:
+    <<: *producer
+    container_name: corporate-actions-producer
+    command: python -m src.equities.corporate_actions_producer
+
+  fundamentals-producer:
+    <<: *producer
+    container_name: fundamentals-producer
+    command: python -m src.equities.fundamentals_producer
+
+  insider-producer:
+    <<: *producer
+    container_name: insider-producer
+    command: python -m src.equities.insider_producer
+
   bls-producer:
     <<: *producer
     container_name: bls-producer
@@ -164,6 +192,11 @@ services:
     <<: *producer
     container_name: treasury-producer
     command: python -m src.macro.treasury_producer
+
+  commodities-producer:
+    <<: *producer
+    container_name: commodities-producer
+    command: python -m src.macro.commodities_producer
 
   # ==========================================
   # FLINK CLUSTER

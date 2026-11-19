@@ -1,3 +1,6 @@
+x-dev-symbols: &dev-symbols
+  SYMBOLS: "AAPL,MSFT"                          # 2 symbols = fast cycles
+
 services:
   kafka:
     environment:
@@ -5,7 +8,7 @@ services:
 
   yahoo-producer:
     environment:
-      SYMBOLS: "AAPL,MSFT"                        # 2 symbols = fast cycles
+      <<: *dev-symbols
       POLL_INTERVAL: "15"                         # seconds between cycles
     volumes:
       - ./producers/src:/app/src                  # hot reload: edit → restart
@@ -13,6 +16,18 @@ services:
   binance-producer:
     volumes:
       - ./producers/src:/app/src                  # hot reload
+
+  corporate-actions-producer:
+    environment:
+      <<: *dev-symbols
+
+  fundamentals-producer:
+    environment:
+      <<: *dev-symbols
+
+  insider-producer:
+    environment:
+      <<: *dev-symbols
 
   grafana:
     environment:
