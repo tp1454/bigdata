@@ -11,20 +11,21 @@ x-kafka-env: &kafka-env
   KAFKA_MIN_INSYNC_REPLICAS: 2
   KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
 
+x-producer-env: &producer-env
+  KAFKA_BROKER: *kafka-brokers
+  SYMBOLS: ${SYMBOLS:-AAPL,MSFT,GOOG}
+  CRYPTO_SYMBOLS: ${CRYPTO_SYMBOLS:-BTCUSDT,ETHUSDT,SOLUSDT}
+  CRYPTO_SYMBOLS_SHARD: ${CRYPTO_SYMBOLS_SHARD:-}
+  POLL_INTERVAL: ${POLL_INTERVAL:-60}
+  POLL_BACKOFF: ${POLL_BACKOFF:-300}
+  PUBLISH_TIMEOUT: ${PUBLISH_TIMEOUT:-5}
+
 x-producer: &producer
   build: ./producers
   image: producers:local
   pull_policy: build
   restart: unless-stopped
-  environment:
-    KAFKA_BROKER: *kafka-brokers
-    SYMBOLS: ${SYMBOLS:-AAPL,MSFT,GOOG}
-    SYMBOLS_SHARD: ${SYMBOLS_SHARD:-}
-    CRYPTO_SYMBOLS: ${CRYPTO_SYMBOLS:-BTCUSDT,ETHUSDT,SOLUSDT}
-    CRYPTO_SYMBOLS_SHARD: ${CRYPTO_SYMBOLS_SHARD:-}
-    POLL_INTERVAL: ${POLL_INTERVAL:-60}
-    POLL_BACKOFF: ${POLL_BACKOFF:-300}
-    PUBLISH_TIMEOUT: ${PUBLISH_TIMEOUT:-5}
+  environment: *producer-env
   depends_on:
     kafka-init:
       condition: service_completed_successfully
@@ -195,6 +196,10 @@ services:
     <<: *producer
     container_name: yahoo-producer
     command: python -m src.equities.yahoo_producer
+    # Sharding is opt-in here only: fundamentals/insider/corporate run whole.
+    environment:
+      <<: *producer-env
+      SYMBOLS_SHARD: ${SYMBOLS_SHARD:-}
 
   index-producer:
     <<: *producer
