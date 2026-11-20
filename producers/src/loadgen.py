@@ -69,12 +69,17 @@ def main():
                     symbol, event_time(base_ts, sent, args.rate), price
                 )
                 count = 1
+            deadline = time.monotonic() + 30
             while True:
                 try:
                     producer.produce(args.topic, key=symbol,
                                      value=json.dumps(payload))
                     break
                 except BufferError:
+                    if time.monotonic() >= deadline:
+                        raise SystemExit(
+                            "Kafka queue full for 30s; is the broker reachable?"
+                        )
                     producer.poll(0.1)
             sent += count
             producer.poll(0)

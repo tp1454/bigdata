@@ -36,8 +36,9 @@ class YahooProducer(BaseProducer):
                     got_data = True
                     newest = history.index[-1]
                     for ts, row in history.iterrows():
-                        # Skip bars already sent; the newest bar keeps moving.
-                        if not should_publish(ts, last, newest):
+                        # `last` is re-sent so a bar that is now complete is
+                        # corrected; newer bars are published as before.
+                        if not should_publish(ts, last):
                             continue
                         # numpy scalars aren't JSON-serializable
                         self.publish(symbol, {
@@ -51,6 +52,9 @@ class YahooProducer(BaseProducer):
                         })
                     self.last_ts[symbol] = newest
                 except Exception as e:
+                    # Reset so the next poll uses the safe "1d" window; a stale
+                    # last_ts can exceed Yahoo's 7-day 1m limit and never recover.
+                    self.last_ts.pop(symbol, None)
                     log.error("Yahoo fetch failed for %s: %s", symbol, e)
             self.flush()
             if not got_data:

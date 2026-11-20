@@ -17,9 +17,7 @@ def parse_shard(value):
 
 
 def shard_symbols(symbols, index, count):
-    """Return every count-th symbol starting at index; count=1 returns all."""
-    if count == 1:
-        return list(symbols)
+    """Return every count-th symbol starting at index; count=1 keeps the list."""
     return [symbol for i, symbol in enumerate(symbols) if i % count == index]
 
 

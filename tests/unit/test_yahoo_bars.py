@@ -1,5 +1,5 @@
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[2] / "producers" / "src"))
@@ -20,17 +20,18 @@ def test_next_sleep_uses_the_idle_backoff():
 def test_history_kwargs_uses_a_small_window_after_the_first_poll():
     assert history_kwargs(None) == {"period": "1d"}
     last = datetime(2026, 1, 1, 10, 0)
-    assert history_kwargs(last) == {"start": last}
+    assert history_kwargs(last) == {"start": last - timedelta(minutes=1)}
 
 
-def test_should_publish_skips_old_bars_but_keeps_newest():
+def test_should_publish_republishes_the_last_bar_and_newer():
     older = datetime(2026, 1, 1, 9, 30)
     last = datetime(2026, 1, 1, 10, 0)
     newest = datetime(2026, 1, 1, 10, 1)
-    assert not should_publish(older, last, newest)
-    assert should_publish(last, last, last)
-    assert should_publish(newest, last, newest)
-    assert should_publish(older, None, newest)
+    assert not should_publish(older, last)
+    # The completed bar is re-sent so its final OHLC/volume replace the partial values.
+    assert should_publish(last, last)
+    assert should_publish(newest, last)
+    assert should_publish(older, None)
 
 
 def test_bar_volume_turns_nan_into_zero():
