@@ -338,6 +338,7 @@ services:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
       FLINK_PARALLELISM: ${FLINK_PARALLELISM:-1}
+      TASKMANAGER_SLOTS: ${TASKMANAGER_SLOTS:-4}
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
@@ -346,6 +347,12 @@ services:
           echo "waiting for Flink REST API"; sleep 2
         done
         groups=$$(python -c "import sys; sys.path.append('/opt/flink/usrlib/src'); import config; print(' '.join(config.TOPIC_GROUPS))")
+        [ -n "$$groups" ] || { echo "no topic groups found; aborting" >&2; exit 1; }
+        need=$$(python -c "import sys; sys.path.append('/opt/flink/usrlib/src'); import config; print(len(config.TOPIC_GROUPS) * config.parallelism())")
+        if [ "$${TASKMANAGER_SLOTS}" -lt "$$need" ]; then
+          echo "need $$need TaskManager slots (groups x parallelism); TASKMANAGER_SLOTS=$${TASKMANAGER_SLOTS}" >&2
+          exit 1
+        fi
         for group in $$groups; do
           name="Kafka_to_ClickHouse_$$group"
           if flink list -m jobmanager:8081 2>/dev/null | grep -q "$$name"; then
@@ -355,7 +362,8 @@ services:
           echo "submitting $$name"
           FLINK_GROUP=$$group flink run -d -m jobmanager:8081 \
             -py /opt/flink/usrlib/src/job_kafka_to_clickhouse.py \
-            --pyFiles /opt/flink/usrlib/src/transforms.py,/opt/flink/usrlib/src/config.py,/opt/flink/usrlib/src/tables.py
+            --pyFiles /opt/flink/usrlib/src/transforms.py,/opt/flink/usrlib/src/config.py,/opt/flink/usrlib/src/tables.py \
+            || { echo "failed to submit $$name" >&2; exit 1; }
         done
     networks: [streaming]
 
