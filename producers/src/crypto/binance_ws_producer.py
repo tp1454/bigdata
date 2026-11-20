@@ -15,8 +15,8 @@ from .trade_batch import grouped_trades
 
 log = logging.getLogger(__name__)
 
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
-QUEUE_MAX = 1000
+SYMBOLS = config.crypto_symbols()
+QUEUE_MAX = 10000
 BATCH_SIZE = 200
 FLUSH_SECONDS = 1.0
 # python-binance's default (100) overflows on raw trade streams.

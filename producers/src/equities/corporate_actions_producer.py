@@ -9,7 +9,7 @@ from ..base_producer import BaseProducer
 
 log = logging.getLogger(__name__)
 
-SYMBOLS = config.SYMBOLS
+SYMBOLS = config.equity_symbols()
 INTERVAL_SECONDS = 86400  # daily
 
 

@@ -10,7 +10,7 @@ from ..base_producer import BaseProducer
 
 log = logging.getLogger(__name__)
 
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+SYMBOLS = config.crypto_symbols()
 INTERVAL = "1d"
 INTERVAL_SECONDS = 3600  # daily bars; re-read recent history hourly
 LIMIT = 5

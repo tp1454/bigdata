@@ -8,12 +8,13 @@ import yfinance as yf
 
 from .. import config
 from ..base_producer import BaseProducer
-from .yahoo_bars import bar_volume, should_publish
+from .yahoo_bars import bar_volume, history_kwargs, next_sleep, should_publish
 
 log = logging.getLogger(__name__)
 
-SYMBOLS = config.SYMBOLS
-INTERVAL_SECONDS = int(os.getenv("POLL_INTERVAL", "15"))
+SYMBOLS = config.equity_symbols()
+INTERVAL_SECONDS = int(os.getenv("POLL_INTERVAL", "60"))
+IDLE_BACKOFF_SECONDS = int(os.getenv("POLL_BACKOFF", "300"))
 
 
 class YahooProducer(BaseProducer):
@@ -23,29 +24,39 @@ class YahooProducer(BaseProducer):
 
     def run(self):
         while True:
+            got_data = False
             for symbol in SYMBOLS:
-                history = yf.Ticker(symbol).history(period="1d", interval="1m")
-                if history.empty:
-                    continue
-                last = self.last_ts.get(symbol)
-                newest = history.index[-1]
-                for ts, row in history.iterrows():
-                    # Skip bars already sent; the newest bar keeps moving.
-                    if not should_publish(ts, last, newest):
+                try:
+                    last = self.last_ts.get(symbol)
+                    history = yf.Ticker(symbol).history(
+                        interval="1m", **history_kwargs(last)
+                    )
+                    if history.empty:
                         continue
-                    # numpy scalars aren't JSON-serializable
-                    self.publish(symbol, {
-                        "symbol": symbol,
-                        "ts": ts.isoformat(),
-                        "open": float(row["Open"]),
-                        "high": float(row["High"]),
-                        "low": float(row["Low"]),
-                        "close": float(row["Close"]),
-                        "volume": bar_volume(row["Volume"]),
-                    })
-                self.last_ts[symbol] = newest
+                    got_data = True
+                    newest = history.index[-1]
+                    for ts, row in history.iterrows():
+                        # Skip bars already sent; the newest bar keeps moving.
+                        if not should_publish(ts, last, newest):
+                            continue
+                        # numpy scalars aren't JSON-serializable
+                        self.publish(symbol, {
+                            "symbol": symbol,
+                            "ts": ts.isoformat(),
+                            "open": float(row["Open"]),
+                            "high": float(row["High"]),
+                            "low": float(row["Low"]),
+                            "close": float(row["Close"]),
+                            "volume": bar_volume(row["Volume"]),
+                        })
+                    self.last_ts[symbol] = newest
+                except Exception as e:
+                    log.error("Yahoo fetch failed for %s: %s", symbol, e)
             self.flush()
-            time.sleep(INTERVAL_SECONDS)
+            if not got_data:
+                log.warning("no Yahoo data; backing off %ss",
+                            IDLE_BACKOFF_SECONDS)
+            time.sleep(next_sleep(got_data, INTERVAL_SECONDS, IDLE_BACKOFF_SECONDS))
 
 
 if __name__ == "__main__":

@@ -8,10 +8,21 @@ import os
 
 from dotenv import load_dotenv
 
+from .sharding import symbols_from_env
+
 load_dotenv()
 
 KAFKA_BROKER = os.getenv("KAFKA_BROKER", "localhost:29092,localhost:29093,localhost:29094")
-SYMBOLS = os.getenv("SYMBOLS", "AAPL,MSFT,GOOG").split(",")
+
+
+def equity_symbols():
+    return symbols_from_env("SYMBOLS", "AAPL,MSFT,GOOG", "SYMBOLS_SHARD")
+
+
+def crypto_symbols():
+    return symbols_from_env(
+        "CRYPTO_SYMBOLS", "BTCUSDT,ETHUSDT,SOLUSDT", "CRYPTO_SYMBOLS_SHARD"
+    )
 
 TOPIC_EQUITIES = "equities.prices"
 TOPIC_CRYPTO = "crypto.trades"
