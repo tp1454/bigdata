@@ -134,6 +134,7 @@ silently stops moving data.
 | `CLICKHOUSE_PASSWORD`    | yes      | ClickHouse `default` user password    |
 | `GRAFANA_ADMIN_PASSWORD` | yes      | Grafana admin password                |
 | `SEC_CONTACT_EMAIL`      | for SEC  | real contact, SEC requires it in UA   |
+| `TOPIC_PARTITIONS`, `FLINK_PARALLELISM`, `TASKMANAGER_SLOTS` | no | Flink/Kafka scale knobs (keep parallelism <= partitions and slots >= 4 x parallelism) |
 | `CLICKHOUSE_*`, `GRAFANA_PORT`, `KAFKA_PORT`, `KAFKA_PORT_2/3` | no | ports/users/db overrides |
 
 ## Layout

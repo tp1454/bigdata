@@ -86,10 +86,7 @@ Deployment per shard.
 
 | Blocker | Where | Why it blocks |
 |---|---|---|
-| 3 partitions, 3 Flink parallelism, 4 slots | `init/kafka/create-topics.sh`, `k8s/config.sh`, `k8s/base/flink.yaml` | Source parallelism cannot exceed partitions; the values are hardcoded in three files. |
 | Single ClickHouse, no sharding/replication | `k8s/base/clickhouse.yaml`, `init/clickhouse/*.sql` | Every insert and query lands on one node; no horizontal path. |
-| Synchronous per-message sink | `flink-jobs/src/job_kafka_to_clickhouse.py` | One HTTP insert per message; no client batching/async; latency × sink subtasks. |
-| One job unions 10 topics | `flink-jobs/src/job_kafka_to_clickhouse.py` | One slow table/topic backpressures everything; one shared consumer group. |
 | Serial, unsharded producers | `producers/src/equities/yahoo_producer.py`, `producers/src/crypto/binance_ws_producer.py` | One pod per feed; full-day Yahoo fetch per poll; crypto list hardcoded. |
 | Silent drops | `producers/src/base_producer.py`, `binance_ws_producer.py` | Queue full drops records; data loss at high rate. |
 | Symbol key skew | `producers/src/base_producer.py`, `binance_ws_producer.py` | BTC dominates; one key cannot be split across partitions. |
@@ -100,6 +97,6 @@ Deployment per shard.
 ## Acceptance
 
 - `make test` and `make lint` pass for each slice.
-- A load harness reports rows/s, Kafka lag, Flink backpressure and ClickHouse
-  p95 insert latency before and after.
+- The load harness reports send rate; Kafka lag, Flink backpressure and
+  ClickHouse p95 insert latency come with the metrics slice.
 - No change claims a scaling win without the harness numbers.
