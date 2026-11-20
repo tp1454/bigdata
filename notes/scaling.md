@@ -23,9 +23,10 @@ Next slices on this branch (stack-independent):
   300 s backoff when no symbol returns data.
 - [x] Split `SYMBOLS` across producer pods and add a crypto symbol config:
   `SYMBOLS_SHARD`, `CRYPTO_SYMBOLS` and `CRYPTO_SYMBOLS_SHARD`. Compose passes
-  them; the k8s app-config and producer Deployments still need the same keys.
-  The example below runs two Yahoo shards; run the matching shard for
-  fundamentals/insider/corporate too, and both Binance producers for crypto.
+  `SYMBOLS_SHARD` to the Yahoo producer only, so the daily feeds stay whole;
+  pass `-e SYMBOLS_SHARD=...` to a daily producer to shard it too. The k8s
+  app-config and producer Deployments still need the same keys. The example
+  below runs two Yahoo shards; shard both Binance producers for crypto.
 - [x] Remove silent producer drops: publish waits up to `PUBLISH_TIMEOUT`
   (default 5 s) for queue space, and the Binance queue is 10k. Remaining drops
   are logged.
@@ -85,6 +86,6 @@ Deployment per shard.
 ## Acceptance
 
 - `make test` and `make lint` pass for each slice.
-- A load harness reports rows/s, Kafka lag, Flink backpressure and ClickHouse
-  p95 insert latency before and after.
+- The load harness reports send rate; Kafka lag, Flink backpressure and
+  ClickHouse p95 insert latency come with the metrics slice below.
 - No change claims a scaling win without the harness numbers.

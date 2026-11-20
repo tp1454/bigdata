@@ -123,6 +123,7 @@ Run `make` or `make help` for the full list.
 | `make test-topics`     | topic partitions and message counts                  |
 | `make logs SERVICE=x`  | tail one service                                     |
 | `make shell SERVICE=x` | shell inside a container                             |
+| `make load RATE=n`     | synthetic Kafka load (`DURATION`, `TOPIC`, `SYMBOL`) |
 | `make nuke`            | wipe all data and restart                            |
 
 `make smoke` is the useful one: it fails when Kafka, Flink, or ClickHouse
@@ -135,6 +136,7 @@ silently stops moving data.
 | `CLICKHOUSE_PASSWORD`    | yes      | ClickHouse `default` user password    |
 | `GRAFANA_ADMIN_PASSWORD` | yes      | Grafana admin password                |
 | `SEC_CONTACT_EMAIL`      | for SEC  | real contact, SEC requires it in UA   |
+| `SYMBOLS`, `SYMBOLS_SHARD`, `CRYPTO_SYMBOLS`, `CRYPTO_SYMBOLS_SHARD`, `POLL_INTERVAL`, `POLL_BACKOFF`, `PUBLISH_TIMEOUT` | no | producer scaling knobs |
 | `CLICKHOUSE_*`, `GRAFANA_PORT`, `KAFKA_PORT`, `KAFKA_PORT_2/3` | no | ports/users/db overrides |
 
 ## Layout
