@@ -29,14 +29,26 @@ Next slices on this branch (stack-independent):
 - [x] Remove silent producer drops: publish waits up to `PUBLISH_TIMEOUT`
   (default 5 s) for queue space, and the Binance queue is 10k. Remaining drops
   are logged.
-- [ ] Add batching/async behavior to the ClickHouse sink without losing the
-  at-least-once guarantee.
-- [ ] Split the Flink job by topic/domain and give each source its own consumer
-  group.
-- [ ] Add TTLs/partitions to the unpartitioned ClickHouse tables; move the
-  indicator views to materialized/incremental tables.
-- [ ] Add metrics and alerts for consumer lag, Flink backpressure and ClickHouse
-  insert latency/merge backlog.
+
+## Next branch (`feat/flink-scale`, from `fix/scaling`)
+
+- [x] One config for `TOPIC_PARTITIONS`, `FLINK_PARALLELISM` and
+  `TASKMANAGER_SLOTS`; keep `FLINK_PARALLELISM <= TOPIC_PARTITIONS` and
+  `TASKMANAGER_SLOTS >= 4 * FLINK_PARALLELISM`. `make topics` grows existing
+  topics to the new count.
+- [x] Split the job into four groups (equities, crypto, fundamentals, macro)
+  with a separate Kafka group per job. The Compose submit loops over the
+  groups and `make job-reset` cancels all four. The first run starts each new
+  group at the earliest retained offset, so expect a replay; ClickHouse
+  dedupes keyed rows, but `pipeline_errors` can gain duplicates.
+- [ ] Batching/native ClickHouse sink (blocked by the PyFlink 1.18 Python sink
+  limitation).
+
+The k8s submit watcher on `feat/kubernetes-multi-host` still submits one job;
+port the same group loop when the branches merge.
+
+The ClickHouse TTL/partition/materialized-view work is the next branch;
+metrics/autoscaler is last.
 
 ## Harness
 
@@ -58,8 +70,8 @@ Deployment per shard.
 
 1. `feat/producers-scale` (this branch's first slice): incremental Yahoo,
    per-symbol errors, no silent drops, symbol sharding, crypto key/symbols.
-2. `feat/flink-scale`: partitions/parallelism/slots in one config, batching
-   sink, split jobs.
+2. `feat/flink-scale`: partitions/parallelism/slots in one config, split jobs
+   (done); batching sink (open).
 3. `feat/clickhouse-scale`: Keeper + replicated ClickHouse + `Distributed`
    tables, shard keys, read path, TTLs, tiering. Split into cluster and
    read/retention branches if it gets too large.
