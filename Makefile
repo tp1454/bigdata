@@ -102,20 +102,20 @@ schema: ## Apply ClickHouse schema and views (idempotent)
 		$(COMPOSE) exec -T clickhouse clickhouse-client < $$f || exit 1; \
 	done
 
-job-reset: ## Cancel and resubmit the Flink job (after code or topic changes)
-	@job=""; \
+job-reset: ## Cancel and resubmit the Flink jobs (after code or topic changes)
+	@ids=""; \
 	for _ in $$(seq 1 60); do \
-		job=$$($(COMPOSE) exec -T jobmanager flink list -r -m jobmanager:8081 2>/dev/null | grep 'Kafka_to_ClickHouse_Pipeline' | grep -oE '[0-9a-f]{32}' | head -1); \
-		[ -n "$$job" ] && break; \
+		ids=$$($(COMPOSE) exec -T jobmanager flink list -m jobmanager:8081 2>/dev/null | grep 'Kafka_to_ClickHouse' | grep -oE '[0-9a-f]{32}' | tr '\n' ' '); \
+		[ -n "$$ids" ] && break; \
 		sleep 2; \
 	done; \
-	if [ -n "$$job" ]; then \
-		$(COMPOSE) exec -T jobmanager flink cancel -m jobmanager:8081 $$job; \
-		for _ in $$(seq 1 30); do \
-			$(COMPOSE) exec -T jobmanager flink list -r -m jobmanager:8081 2>/dev/null | grep -q "$$job" || break; \
-			sleep 1; \
-		done; \
-	fi; \
+	for id in $$ids; do \
+		$(COMPOSE) exec -T jobmanager flink cancel -m jobmanager:8081 $$id; \
+	done; \
+	for _ in $$(seq 1 30); do \
+		$(COMPOSE) exec -T jobmanager flink list -m jobmanager:8081 2>/dev/null | grep -q 'Kafka_to_ClickHouse' || break; \
+		sleep 1; \
+	done; \
 	$(COMPOSE) run --rm flink-submit
 
 query: ## Run a ClickHouse query (SQL='SELECT ...')

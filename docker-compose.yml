@@ -10,6 +10,7 @@ x-kafka-env: &kafka-env
   KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
   KAFKA_MIN_INSYNC_REPLICAS: 2
   KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+  TOPIC_PARTITIONS: ${TOPIC_PARTITIONS:-3}
 
 x-producer: &producer
   build: ./producers
@@ -131,6 +132,7 @@ services:
     entrypoint: ["bash", "/create-topics.sh"]
     environment:
       KAFKA_BROKER: *kafka-brokers
+      TOPIC_PARTITIONS: ${TOPIC_PARTITIONS:-3}
     restart: "no"
     networks: [streaming]
 
@@ -314,7 +316,7 @@ services:
     environment:
       FLINK_PROPERTIES: |
         jobmanager.rpc.address: jobmanager
-        taskmanager.numberOfTaskSlots: 2
+        taskmanager.numberOfTaskSlots: ${TASKMANAGER_SLOTS:-4}
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
@@ -335,6 +337,7 @@ services:
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
+      FLINK_PARALLELISM: ${FLINK_PARALLELISM:-1}
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
@@ -342,12 +345,18 @@ services:
           flink list -m jobmanager:8081 >/dev/null 2>&1 && break
           echo "waiting for Flink REST API"; sleep 2
         done
-        if [ "$(flink list -r -m jobmanager:8081 2>/dev/null | grep -c RUNNING)" -gt 0 ]; then
-          echo "job already running; skipping submission"; exit 0
-        fi
-        flink run -d -m jobmanager:8081 \
-          -py /opt/flink/usrlib/src/job_kafka_to_clickhouse.py \
-          --pyFiles /opt/flink/usrlib/src/transforms.py,/opt/flink/usrlib/src/config.py
+        groups=$$(python -c "import sys; sys.path.append('/opt/flink/usrlib/src'); import config; print(' '.join(config.TOPIC_GROUPS))")
+        for group in $$groups; do
+          name="Kafka_to_ClickHouse_$$group"
+          if flink list -m jobmanager:8081 2>/dev/null | grep -q "$$name"; then
+            echo "$$name already exists; skipping"
+            continue
+          fi
+          echo "submitting $$name"
+          FLINK_GROUP=$$group flink run -d -m jobmanager:8081 \
+            -py /opt/flink/usrlib/src/job_kafka_to_clickhouse.py \
+            --pyFiles /opt/flink/usrlib/src/transforms.py,/opt/flink/usrlib/src/config.py
+        done
     networks: [streaming]
 
 networks:

@@ -33,8 +33,8 @@ wait_until "kafka" docker compose exec -T kafka-1 \
     kafka-broker-api-versions --bootstrap-server localhost:29092
 wait_until "clickhouse" docker compose exec -T clickhouse \
     wget -q --spider http://localhost:8123/ping
-wait_until "flink job RUNNING" bash -c \
-    'docker compose exec -T jobmanager flink list -r 2>/dev/null | grep -q RUNNING'
+wait_until "4 flink jobs RUNNING" bash -c \
+    '[ "$(docker compose exec -T jobmanager flink list -r 2>/dev/null | grep -c RUNNING)" -ge 4 ]'
 
 topics=$(docker compose exec -T kafka-1 kafka-topics --bootstrap-server kafka-1:29092,kafka-2:29092,kafka-3:29092 --list | tr -d '\r')
 for topic in $TOPICS; do

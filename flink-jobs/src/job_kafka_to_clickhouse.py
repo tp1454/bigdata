@@ -88,20 +88,21 @@ class ClickHouseSink(MapFunction):
 # ==============================================================================
 def main():
     env = StreamExecutionEnvironment.get_execution_environment()
-    env.set_parallelism(1)
+    env.set_parallelism(config.parallelism())
     # shortcut: checkpoint state lives in JobManager memory; add a durable
     # state backend when the job manager itself must survive restarts.
     env.enable_checkpointing(config.CHECKPOINT_INTERVAL_MS)
 
+    topics = config.topics_for_group()
     all_streams = []
 
-    for topic in config.KAFKA_TOPICS:
+    for topic in topics:
         log.info("Configuring Kafka source for topic: %s", topic)
 
         source = KafkaSource.builder() \
             .set_bootstrap_servers(config.KAFKA_BROKER) \
             .set_topics(topic) \
-            .set_group_id(config.KAFKA_GROUP_ID) \
+            .set_group_id(config.job_group_id()) \
             .set_starting_offsets(
                 KafkaOffsetsInitializer.committed_offsets(KafkaOffsetResetStrategy.EARLIEST)
             ) \
@@ -127,8 +128,8 @@ def main():
 
     merged_stream.map(ClickHouseSink(), output_type=Types.BOOLEAN())
 
-    log.info("Starting Kafka to ClickHouse job")
-    env.execute("Kafka_to_ClickHouse_Pipeline")
+    log.info("Starting %s", config.job_name())
+    env.execute(config.job_name())
 
 
 if __name__ == '__main__':

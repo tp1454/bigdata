@@ -30,6 +30,42 @@ KAFKA_TOPICS = [
     "fundamentals.insider",
 ]
 
+TOPIC_GROUPS = {
+    "equities": ["equities.prices"],
+    "crypto": ["crypto.trades", "crypto.ohlcv", "crypto.market"],
+    "fundamentals": [
+        "fundamentals.filings",
+        "fundamentals.actions",
+        "fundamentals.statements",
+        "fundamentals.insider",
+    ],
+    "macro": ["forex.rates", "macro.indicators"],
+}
+
+
+def _group():
+    group = os.getenv("FLINK_GROUP", "").strip()
+    if group and group not in TOPIC_GROUPS:
+        raise RuntimeError(f"unknown FLINK_GROUP {group!r}")
+    return group
+
+
+def topics_for_group():
+    group = _group()
+    return list(TOPIC_GROUPS[group]) if group else list(KAFKA_TOPICS)
+
+
+def job_name():
+    group = _group()
+    if not group:
+        return "Kafka_to_ClickHouse_Pipeline"
+    return f"Kafka_to_ClickHouse_{group}"
+
+
+def job_group_id():
+    group = _group()
+    return f"{KAFKA_GROUP_ID}_{group}" if group else KAFKA_GROUP_ID
+
 # ==========================================
 # CLICKHOUSE
 # ==========================================
@@ -43,3 +79,10 @@ CLICKHOUSE_DB = os.getenv("CLICKHOUSE_DB", "analytics")
 # PIPELINE
 # ==========================================
 CHECKPOINT_INTERVAL_MS = int(os.getenv("CHECKPOINT_INTERVAL_MS", "60000"))
+
+
+def parallelism():
+    value = int(os.getenv("FLINK_PARALLELISM", "1"))
+    if value < 1:
+        raise RuntimeError("FLINK_PARALLELISM must be at least 1")
+    return value
