@@ -78,13 +78,12 @@ days, and `fundamentals.filings` is compacted.
 
 ## Delivery semantics
 
-The Flink jobs are **at-least-once**: each record is inserted before the task
-continues, Kafka offsets commit with the checkpoint, and a failed insert fails
-the task instead of dropping rows, so the batch is replayed. PyFlink has no
-checkpoint hook for Python sinks, which is why there is no local buffer.
-Replays are deduplicated by ClickHouse `ReplacingMergeTree` on natural keys
-(`trade_id`, `symbol + ts`, ...); inserts use server-side `async_insert` so the
-small writes are batched into parts by ClickHouse itself.
+The Flink jobs are **at-least-once**: the JDBC sink batches rows and flushes
+them on every checkpoint, so Kafka offsets commit only after the rows reach
+ClickHouse. The connector is JVM-side (`flink-connector-jdbc` plus the
+ClickHouse JDBC driver); a failed flush fails the task and the batch is
+replayed. Replays are deduplicated by ClickHouse `ReplacingMergeTree` on
+natural keys (`trade_id`, `symbol + ts`, ...).
 
 Deduplication happens on merge, so read tick tables with `argMax(...)` (as the
 dashboards do) or `FINAL` before relying on uniqueness.

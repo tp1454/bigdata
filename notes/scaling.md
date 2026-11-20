@@ -41,8 +41,11 @@ Next slices on this branch (stack-independent):
   groups and `make job-reset` cancels all four. The first run starts each new
   group at the earliest retained offset, so expect a replay; ClickHouse
   dedupes keyed rows, but `pipeline_errors` can gain duplicates.
-- [ ] Batching/native ClickHouse sink (blocked by the PyFlink 1.18 Python sink
-  limitation).
+- [x] Native ClickHouse JDBC sink (Table API): each table has a `jdbc` sink;
+  the connector batches rows and flushes on checkpoints, so Kafka offsets
+  commit only after the rows reach ClickHouse. Requires the
+  `flink-connector-jdbc` and ClickHouse JDBC JARs in the Flink image and the
+  `tables.py` pyFile. A live checkpoint/restart test is still pending.
 
 The k8s submit watcher on `feat/kubernetes-multi-host` still submits one job;
 port the same group loop when the branches merge.
@@ -71,7 +74,7 @@ Deployment per shard.
 1. `feat/producers-scale` (this branch's first slice): incremental Yahoo,
    per-symbol errors, no silent drops, symbol sharding, crypto key/symbols.
 2. `feat/flink-scale`: partitions/parallelism/slots in one config, split jobs
-   (done); batching sink (open).
+   (done); batching sink via JDBC (done).
 3. `feat/clickhouse-scale`: Keeper + replicated ClickHouse + `Distributed`
    tables, shard keys, read path, TTLs, tiering. Split into cluster and
    read/retention branches if it gets too large.
