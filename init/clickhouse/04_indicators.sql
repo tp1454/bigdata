@@ -1,7 +1,13 @@
 -- Indicator/analytics view over deduped, sanity-checked equity bars.
 -- RSI/ATR use simple moving averages (suffix _sma); Wilder smoothing and
 -- EMA/MACD are intentionally not implemented yet.
-CREATE OR REPLACE VIEW analytics.equities_indicators AS
+--
+-- `equities_indicators` stays a live window view for ad-hoc queries. The
+-- refreshable materialized view in init/clickhouse-mv precomputes the same
+-- series per shard every 5 minutes into `equities_indicators_snapshot`, so
+-- dashboards can read a table instead of windowing all history per query.
+
+CREATE OR REPLACE VIEW analytics.equities_indicators ON CLUSTER analytics_cluster AS
 WITH bars AS (
     SELECT
         symbol, ts, open, high, low, close, volume,
