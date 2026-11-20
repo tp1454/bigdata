@@ -11,7 +11,7 @@ KAFKA_TOPICS := equities.prices crypto.trades crypto.ohlcv crypto.market forex.r
 TABLES := equities_prices:ts crypto_trades:timestamp crypto_ohlcv:timestamp crypto_market_data:timestamp forex_rates:timestamp macro_indicators:timestamp company_filings:filing_date corporate_actions:action_date fundamentals:end_date insider_transactions:transaction_date pipeline_errors:ts
 
 .PHONY: help setup dev up build deploy redeploy down logs ps shell topics feed \
-        test-topics check-data schema job-reset smoke test lint fmt check nuke url query
+        load test-topics check-data schema job-reset smoke test lint fmt check nuke url query
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -60,6 +60,12 @@ topics: ## Re-run topic creation/configuration
 
 feed: ## Tail Kafka messages (TOPIC=x for one topic)
 	@$(COMPOSE) exec -T kafka-1 kafka-console-consumer --bootstrap-server $(KAFKA_BROKERS) $(if $(TOPIC),--topic $(TOPIC),--include '.*')
+
+load: ## Synthetic Kafka load (RATE=500 DURATION=60 TOPIC=crypto.trades)
+	$(COMPOSE) --profile load run --rm loadgen python -m src.loadgen \
+		--rate $(or $(RATE),500) --duration $(or $(DURATION),60) \
+		--topic $(or $(TOPIC),crypto.trades) \
+		$(if $(SYMBOL),--symbol $(SYMBOL))
 
 test-topics: ## Show topics, partitions and message counts
 	@echo "=== Existing Topics ==="

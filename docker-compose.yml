@@ -18,6 +18,13 @@ x-producer: &producer
   restart: unless-stopped
   environment:
     KAFKA_BROKER: *kafka-brokers
+    SYMBOLS: ${SYMBOLS:-AAPL,MSFT,GOOG}
+    SYMBOLS_SHARD: ${SYMBOLS_SHARD:-}
+    CRYPTO_SYMBOLS: ${CRYPTO_SYMBOLS:-BTCUSDT,ETHUSDT,SOLUSDT}
+    CRYPTO_SYMBOLS_SHARD: ${CRYPTO_SYMBOLS_SHARD:-}
+    POLL_INTERVAL: ${POLL_INTERVAL:-60}
+    POLL_BACKOFF: ${POLL_BACKOFF:-300}
+    PUBLISH_TIMEOUT: ${PUBLISH_TIMEOUT:-5}
   depends_on:
     kafka-init:
       condition: service_completed_successfully
@@ -251,6 +258,14 @@ services:
     <<: *producer
     container_name: commodities-producer
     command: python -m src.macro.commodities_producer
+
+  # Synthetic load for scaling tests: make load RATE=500 DURATION=60
+  loadgen:
+    <<: *producer
+    container_name: loadgen
+    profiles: [load]
+    restart: "no"
+    command: python -m src.loadgen --rate 500 --duration 60
 
   # ==========================================
   # FLINK CLUSTER
