@@ -42,11 +42,19 @@ Next slices on this branch (stack-independent):
   groups and `make job-reset` cancels all four. The first run starts each new
   group at the earliest retained offset, so expect a replay; ClickHouse
   dedupes keyed rows, but `pipeline_errors` can gain duplicates.
-- [x] Native ClickHouse JDBC sink (Table API): each table has a `jdbc` sink;
-  the connector batches rows and flushes on checkpoints, so Kafka offsets
-  commit only after the rows reach ClickHouse. Requires the
-  `flink-connector-jdbc` and ClickHouse JDBC JARs in the Flink image and the
-  `tables.py` pyFile. A live checkpoint/restart test is still pending.
+- [ ] Native ClickHouse sink (deferred). The Table API `jdbc` sink cannot
+  target ClickHouse: `flink-connector-jdbc 3.1.2-1.18` ships dialects only for
+  Derby/MySQL/Oracle/Postgres/SQLServer, and `clickhouse-jdbc` provides no
+  `JdbcDialectFactory`. The pipeline keeps the Python `clickhouse_connect`
+  sink; server-side `async_insert` batches writes and the high-rate topic
+  batches at the producer, which is ample for this stack's ~25 rows/s.
+
+  Future option if measured load needs it (Kafka consumer lag, sink
+  backpressure/CPU, or ClickHouse part/merge pressure): add
+  `com.clickhouse.flink:flink-connector-clickhouse-1.17:0.2.0` (classifier
+  `all`) to `/opt/flink/lib` and use `ClickHouseAsyncSink` from a **Java
+  DataStream** job — it has no Table API/SQL support yet, is at-least-once
+  with no DLQ, and recommends `async_insert=0` + `insert_deduplicate=1`.
 
 ## Next branch (`feat/clickhouse-scale`, from `feat/flink-native-sink`)
 

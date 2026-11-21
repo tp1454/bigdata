@@ -521,7 +521,7 @@ services:
           echo "submitting $$name"
           FLINK_GROUP=$$group flink run -d -m jobmanager:8081 \
             -py /opt/flink/usrlib/src/job_kafka_to_clickhouse.py \
-            --pyFiles /opt/flink/usrlib/src/transforms.py,/opt/flink/usrlib/src/config.py,/opt/flink/usrlib/src/tables.py \
+            --pyFiles /opt/flink/usrlib/src/transforms.py,/opt/flink/usrlib/src/config.py \
             || { echo "failed to submit $$name" >&2; exit 1; }
         done
     networks: [streaming]
