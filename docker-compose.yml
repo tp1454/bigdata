@@ -44,7 +44,7 @@ x-clickhouse: &clickhouse
     nofile:
       soft: 262144
       hard: 262144
-  mem_limit: 1g
+  mem_limit: 3g
   healthcheck:
     test: ["CMD-SHELL", "wget -q --spider http://localhost:8123/ping || exit 1"]
     interval: 10s
@@ -326,7 +326,7 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
-      GF_INSTALL_PLUGINS: grafana-clickhouse-datasource
+      GF_INSTALL_PLUGINS: "grafana-clickhouse-datasource 4.23.5"
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
@@ -449,6 +449,8 @@ services:
         restart-strategy: fixed-delay
         restart-strategy.fixed-delay.attempts: 3
         restart-strategy.fixed-delay.delay: 10 s
+        metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+        metrics.reporter.prom.port: 9249
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
@@ -474,6 +476,8 @@ services:
       FLINK_PROPERTIES: |
         jobmanager.rpc.address: jobmanager
         taskmanager.numberOfTaskSlots: ${TASKMANAGER_SLOTS:-4}
+        metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+        metrics.reporter.prom.port: 9249
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
@@ -498,6 +502,8 @@ services:
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
       FLINK_PARALLELISM: ${FLINK_PARALLELISM:-1}
       TASKMANAGER_SLOTS: ${TASKMANAGER_SLOTS:-4}
+      CHECKPOINT_TIMEOUT_MS: ${CHECKPOINT_TIMEOUT_MS:-600000}
+      CHECKPOINT_INTERVAL_MS: ${CHECKPOINT_INTERVAL_MS:-60000}
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |
@@ -526,6 +532,41 @@ services:
         done
     networks: [streaming]
 
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.8.0
+    container_name: kafka-exporter
+    restart: unless-stopped
+    command:
+      - --kafka.server=kafka-1:29092
+      - --kafka.server=kafka-2:29092
+      - --kafka.server=kafka-3:29092
+      - --web.listen-address=:9308
+      - '--topic.filter=^(equities|crypto|forex|macro|fundamentals)\..*$'
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    mem_limit: 256m
+    networks: [streaming]
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=2GB
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./configs/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      - kafka-exporter
+    mem_limit: 512m
+    networks: [streaming]
+
 networks:
   streaming:
     driver: bridge
@@ -537,3 +578,4 @@ volumes:
   clickhouse_data_4:
   clickhouse_keeper_data:
   s3proxy_data:
+  prometheus_data:

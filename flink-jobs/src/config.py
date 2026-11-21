@@ -79,6 +79,7 @@ CLICKHOUSE_DB = os.getenv("CLICKHOUSE_DB", "analytics")
 # PIPELINE
 # ==========================================
 CHECKPOINT_INTERVAL_MS = int(os.getenv("CHECKPOINT_INTERVAL_MS", "60000"))
+CHECKPOINT_TIMEOUT_MS = int(os.getenv("CHECKPOINT_TIMEOUT_MS", "600000"))
 
 
 def parallelism():

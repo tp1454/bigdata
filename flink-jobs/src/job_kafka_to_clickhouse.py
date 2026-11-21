@@ -92,6 +92,7 @@ def main():
     # shortcut: checkpoint state lives in JobManager memory; add a durable
     # state backend when the job manager itself must survive restarts.
     env.enable_checkpointing(config.CHECKPOINT_INTERVAL_MS)
+    env.get_checkpoint_config().set_checkpoint_timeout(config.CHECKPOINT_TIMEOUT_MS)
 
     topics = config.topics_for_group()
     all_streams = []

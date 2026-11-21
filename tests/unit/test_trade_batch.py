@@ -3,7 +3,13 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[2] / "producers" / "src"))
 
-from crypto.trade_batch import grouped_trades
+from crypto.trade_batch import FLUSH_SECONDS, MAX_BATCH_ROWS, flush_due, grouped_trades
+
+
+def test_flush_due_on_size_or_time():
+    assert not flush_due(1, 0.1)
+    assert flush_due(MAX_BATCH_ROWS, 0.1)
+    assert flush_due(1, FLUSH_SECONDS)
 
 
 def test_grouped_trades_keeps_each_symbol_under_its_key():

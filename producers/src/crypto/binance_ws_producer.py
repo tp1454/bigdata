@@ -11,14 +11,12 @@ from binance import ThreadedWebsocketManager
 
 from .. import config
 from ..base_producer import BaseProducer
-from .trade_batch import grouped_trades
+from .trade_batch import flush_due, grouped_trades
 
 log = logging.getLogger(__name__)
 
 SYMBOLS = config.crypto_symbols()
 QUEUE_MAX = 10000
-BATCH_SIZE = 200
-FLUSH_SECONDS = 1.0
 # python-binance's default (100) overflows on raw trade streams.
 SOCKET_QUEUE_MAX = 10000
 
@@ -62,7 +60,7 @@ class BinanceProducer(BaseProducer):
 
     def _drain(self):
         batch = []
-        last = time.time()
+        window_start = None
         while True:
             try:
                 msg = self._q.get(timeout=0.2)
@@ -72,12 +70,14 @@ class BinanceProducer(BaseProducer):
                 self._publish_batch(batch)
                 break
             if msg:
+                if not batch:
+                    window_start = time.time()
                 batch.append(msg)
             now = time.time()
-            if batch and (len(batch) >= BATCH_SIZE or now - last >= FLUSH_SECONDS):
+            if batch and flush_due(len(batch), now - window_start):
                 self._publish_batch(batch)
                 batch = []
-                last = now
+                window_start = None
         self.flush()
 
     def _shutdown(self, signum, frame):

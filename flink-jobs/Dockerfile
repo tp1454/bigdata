@@ -9,6 +9,8 @@ RUN pip install -r /opt/flink/usrlib/requirements.txt
 
 RUN wget -P /opt/flink/lib/ https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-kafka/3.1.0-1.18/flink-sql-connector-kafka-3.1.0-1.18.jar
 
+RUN wget -P /opt/flink/lib/ https://repo1.maven.org/maven2/org/apache/flink/flink-metrics-prometheus/1.18.1/flink-metrics-prometheus-1.18.1.jar
+
 COPY src/ /opt/flink/usrlib/src/
 
 # THÊM DÒNG NÀY ĐỂ BÁO CHO PYTHON BIẾT NƠI TÌM MODULE

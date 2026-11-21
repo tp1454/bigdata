@@ -53,6 +53,7 @@ topic script does not rewrite existing RF1 assignments.
 |--------------|-------------------------------|
 | Grafana      | http://localhost:3000         |
 | Flink UI     | http://localhost:8081         |
+| Prometheus   | http://localhost:9090         |
 | ClickHouse   | http://localhost:8123         |
 | Kafka        | localhost:29092 (bootstrap; 29092-29094) |
 
@@ -111,6 +112,23 @@ raw payload) instead of being dropped silently.
 A single `clickhouse-keeper` coordinates replication and distributed DDL. It is
 not replicated, so it is the remaining ClickHouse single point.
 
+## Monitoring
+
+Prometheus scrapes `kafka-exporter` for topic offsets and consumer-group lag,
+and the Flink Prometheus reporter on `jobmanager:9249` and
+`taskmanager:9249` for records in/out, checkpoint duration and backpressure.
+Grafana's **Pipeline Input** dashboard shows input rate, lag and processing
+rate next to the existing output dashboards.
+
+Kafka offsets commit only at Flink checkpoints, so do not read a rate from the
+committed offset: it is bursty. Use consumer lag plus Flink's
+`numRecordsInPerSecond` instead. Input rate comes from Kafka log-end offsets
+(`kafka_topic_partition_current_offset`), which track producers directly.
+
+Alert rules live in `configs/prometheus/alerts.yml`. They show as firing in
+Prometheus, but sending notifications needs an Alertmanager, which this stack
+does not run.
+
 ## Indicators and analytics
 
 `analytics.equities_prices_clean` dedupes replays and drops impossible bars.
@@ -164,7 +182,7 @@ silently stops moving data.
 | `SEC_CONTACT_EMAIL`      | for SEC  | real contact, SEC requires it in UA   |
 | `SYMBOLS`, `SYMBOLS_SHARD`, `CRYPTO_SYMBOLS`, `CRYPTO_SYMBOLS_SHARD`, `POLL_INTERVAL`, `POLL_BACKOFF`, `PUBLISH_TIMEOUT` | no | producer scaling knobs |
 | `TOPIC_PARTITIONS`, `FLINK_PARALLELISM`, `TASKMANAGER_SLOTS` | no | Flink/Kafka scale knobs (keep parallelism <= partitions and slots >= 4 x parallelism) |
-| `CLICKHOUSE_*`, `GRAFANA_PORT`, `KAFKA_PORT`, `KAFKA_PORT_2/3` | no | ports/users/db overrides |
+| `CLICKHOUSE_*`, `GRAFANA_PORT`, `PROMETHEUS_PORT`, `KAFKA_PORT`, `KAFKA_PORT_2/3` | no | ports/users/db overrides |
 
 ## Layout
 
@@ -186,7 +204,8 @@ silently stops moving data.
 │   └── macro/                  BLS, US Treasury, commodities
 ├── flink-jobs/src/             PyFlink job, transforms, config
 ├── configs/grafana/            datasource + dashboard provisioning
-├── dashboards/                 Market Analytics, Pipeline Health
+├── configs/prometheus/         scrape config + alert rules
+├── dashboards/                 Market Analytics, Pipeline Health, Pipeline Input
 ├── tests/unit/                 transform + dead-letter tests
 ├── scripts/smoke.sh            end-to-end check used by make smoke
 ├── requirements-dev.txt        pytest, ruff

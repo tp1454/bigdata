@@ -122,6 +122,7 @@ url: ## Print service URLs
 	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; \
 	echo "Grafana:    http://localhost:$${GRAFANA_PORT:-3000}"; \
 	echo "Flink UI:   http://localhost:8081"; \
+	echo "Prometheus: http://localhost:$${PROMETHEUS_PORT:-9090}"; \
 	echo "ClickHouse: http://localhost:$${CLICKHOUSE_HTTP_PORT:-8123} (user $${CLICKHOUSE_USER:-default})"; \
 	echo "Kafka:      localhost:$${KAFKA_PORT:-29092}"
 
