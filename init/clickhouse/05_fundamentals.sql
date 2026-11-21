@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS analytics.insider_transactions_local ON CLUSTER analy
     transaction LowCardinality(String),
     transaction_date Date,
     shares Float64,
-    value Float64,
+    value Nullable(Float64),
     ownership LowCardinality(String),
     source LowCardinality(String),
     ingested_at DateTime64(3, 'UTC') DEFAULT now64(3)
