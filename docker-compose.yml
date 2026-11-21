@@ -476,6 +476,8 @@ services:
       FLINK_PROPERTIES: |
         jobmanager.rpc.address: jobmanager
         taskmanager.numberOfTaskSlots: ${TASKMANAGER_SLOTS:-4}
+        taskmanager.memory.process.size: 6g
+        taskmanager.memory.task.off-heap.size: 1g
         metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
         metrics.reporter.prom.port: 9249
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
@@ -519,6 +521,7 @@ services:
           exit 1
         fi
         for group in $$groups; do
+          [ "$$group" = "crypto" ] && continue
           name="Kafka_to_ClickHouse_$$group"
           if flink list -m jobmanager:8081 2>/dev/null | grep -q "$$name"; then
             echo "$$name already exists; skipping"
@@ -530,6 +533,12 @@ services:
             --pyFiles /opt/flink/usrlib/src/transforms.py,/opt/flink/usrlib/src/config.py \
             || { echo "failed to submit $$name" >&2; exit 1; }
         done
+        if ! flink list -m jobmanager:8081 2>/dev/null | grep -q "Kafka_to_ClickHouse_crypto"; then
+          echo "submitting Kafka_to_ClickHouse_crypto (java)"
+          flink run -d -m jobmanager:8081 -c com.example.CryptoToClickHouse \
+            /opt/flink/usrlib/crypto-sink.jar \
+            || { echo "failed to submit Java crypto job" >&2; exit 1; }
+        fi
     networks: [streaming]
 
   kafka-exporter:
