@@ -30,14 +30,29 @@ Next slices on this branch (stack-independent):
 - [x] Remove silent producer drops: publish waits up to `PUBLISH_TIMEOUT`
   (default 5 s) for queue space, and the Binance queue is 10k. Remaining drops
   are logged.
-- [ ] Add batching/async behavior to the ClickHouse sink without losing the
-  at-least-once guarantee.
-- [ ] Split the Flink job by topic/domain and give each source its own consumer
-  group.
-- [ ] Add TTLs/partitions to the unpartitioned ClickHouse tables; move the
-  indicator views to materialized/incremental tables.
-- [ ] Add metrics and alerts for consumer lag, Flink backpressure and ClickHouse
-  insert latency/merge backlog.
+
+## Next branch (`feat/flink-scale`, from `fix/scaling`)
+
+- [x] One config for `TOPIC_PARTITIONS`, `FLINK_PARALLELISM` and
+  `TASKMANAGER_SLOTS`; keep `FLINK_PARALLELISM <= TOPIC_PARTITIONS` and
+  `TASKMANAGER_SLOTS >= 4 * FLINK_PARALLELISM`. `make topics` grows existing
+  topics to the new count.
+- [x] Split the job into four groups (equities, crypto, fundamentals, macro)
+  with a separate Kafka group per job. The Compose submit loops over the
+  groups and `make job-reset` cancels all four. The first run starts each new
+  group at the earliest retained offset, so expect a replay; ClickHouse
+  dedupes keyed rows, but `pipeline_errors` can gain duplicates.
+- [x] Native ClickHouse JDBC sink (Table API): each table has a `jdbc` sink;
+  the connector batches rows and flushes on checkpoints, so Kafka offsets
+  commit only after the rows reach ClickHouse. Requires the
+  `flink-connector-jdbc` and ClickHouse JDBC JARs in the Flink image and the
+  `tables.py` pyFile. A live checkpoint/restart test is still pending.
+
+The k8s submit watcher on `feat/kubernetes-multi-host` still submits one job;
+port the same group loop when the branches merge.
+
+The ClickHouse TTL/partition/materialized-view work is the next branch;
+metrics/autoscaler is last.
 
 ## Harness
 
@@ -59,8 +74,8 @@ Deployment per shard.
 
 1. `feat/producers-scale` (this branch's first slice): incremental Yahoo,
    per-symbol errors, no silent drops, symbol sharding, crypto key/symbols.
-2. `feat/flink-scale`: partitions/parallelism/slots in one config, batching
-   sink, split jobs.
+2. `feat/flink-scale`: partitions/parallelism/slots in one config, split jobs
+   (done); batching sink via JDBC (done).
 3. `feat/clickhouse-scale`: Keeper + replicated ClickHouse + `Distributed`
    tables, shard keys, read path, TTLs, tiering. Split into cluster and
    read/retention branches if it gets too large.
@@ -72,10 +87,7 @@ Deployment per shard.
 
 | Blocker | Where | Why it blocks |
 |---|---|---|
-| 3 partitions, 3 Flink parallelism, 4 slots | `init/kafka/create-topics.sh`, `k8s/config.sh`, `k8s/base/flink.yaml` | Source parallelism cannot exceed partitions; the values are hardcoded in three files. |
 | Single ClickHouse, no sharding/replication | `k8s/base/clickhouse.yaml`, `init/clickhouse/*.sql` | Every insert and query lands on one node; no horizontal path. |
-| Synchronous per-message sink | `flink-jobs/src/job_kafka_to_clickhouse.py` | One HTTP insert per message; no client batching/async; latency × sink subtasks. |
-| One job unions 10 topics | `flink-jobs/src/job_kafka_to_clickhouse.py` | One slow table/topic backpressures everything; one shared consumer group. |
 | Serial, unsharded producers | `producers/src/equities/yahoo_producer.py`, `producers/src/crypto/binance_ws_producer.py` | One pod per feed; full-day Yahoo fetch per poll; crypto list hardcoded. |
 | Silent drops | `producers/src/base_producer.py`, `binance_ws_producer.py` | Queue full drops records; data loss at high rate. |
 | Symbol key skew | `producers/src/base_producer.py`, `binance_ws_producer.py` | BTC dominates; one key cannot be split across partitions. |
@@ -87,5 +99,5 @@ Deployment per shard.
 
 - `make test` and `make lint` pass for each slice.
 - The load harness reports send rate; Kafka lag, Flink backpressure and
-  ClickHouse p95 insert latency come with the metrics slice below.
+  ClickHouse p95 insert latency come with the metrics slice.
 - No change claims a scaling win without the harness numbers.

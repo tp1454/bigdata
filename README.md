@@ -72,19 +72,18 @@ to start without `CLICKHOUSE_PASSWORD` and `GRAFANA_ADMIN_PASSWORD`.
 | `fundamentals.insider`   | `analytics.insider_transactions`  | Yahoo insiders            |
 | (parse failures)         | `analytics.pipeline_errors`       | Flink dead-letter         |
 
-Topics get 3 partitions. Tick topics keep 7 days in Kafka; ClickHouse keeps
-90 days of tick data. Fundamentals topics keep 30 days, and
-`fundamentals.filings` is compacted.
+Topics get `TOPIC_PARTITIONS` partitions (default 3). Tick topics keep 7 days
+in Kafka; ClickHouse keeps 90 days of tick data. Fundamentals topics keep 30
+days, and `fundamentals.filings` is compacted.
 
 ## Delivery semantics
 
-The Flink job is **at-least-once**: each record is inserted before the task
-continues, Kafka offsets commit with the checkpoint, and a failed insert fails
-the task instead of dropping rows, so the batch is replayed. PyFlink has no
-checkpoint hook for Python sinks, which is why there is no local buffer.
-Replays are deduplicated by ClickHouse `ReplacingMergeTree` on natural keys
-(`trade_id`, `symbol + ts`, ...); inserts use server-side `async_insert` so the
-small writes are batched into parts by ClickHouse itself.
+The Flink jobs are **at-least-once**: the JDBC sink batches rows and flushes
+them on every checkpoint, so Kafka offsets commit only after the rows reach
+ClickHouse. The connector is JVM-side (`flink-connector-jdbc` plus the
+ClickHouse JDBC driver); a failed flush fails the task and the batch is
+replayed. Replays are deduplicated by ClickHouse `ReplacingMergeTree` on
+natural keys (`trade_id`, `symbol + ts`, ...).
 
 Deduplication happens on merge, so read tick tables with `argMax(...)` (as the
 dashboards do) or `FINAL` before relying on uniqueness.
@@ -112,12 +111,12 @@ Run `make` or `make help` for the full list.
 | `make dev`             | create `.venv` with pytest/ruff                      |
 | `make deploy`          | build + start + topics/schema + job reset + smoke     |
 | `make redeploy`        | recreate containers with current config              |
-| `make smoke`           | end-to-end check: services, job, topics, new rows    |
+| `make smoke`           | end-to-end check: services, jobs, topics, new rows   |
 | `make check`           | lint + unit tests + compose validation               |
 | `make test` / `lint`   | pytest / ruff                                        |
 | `make check-data`      | row counts and latest timestamp per table            |
 | `make schema`          | apply ClickHouse schema + views (idempotent)         |
-| `make job-reset`       | cancel and resubmit the Flink job                    |
+| `make job-reset`       | cancel and resubmit the Flink jobs                   |
 | `make query SQL='...'` | one-off ClickHouse query                             |
 | `make feed TOPIC=...`  | tail Kafka messages                                  |
 | `make test-topics`     | topic partitions and message counts                  |
@@ -137,6 +136,7 @@ silently stops moving data.
 | `GRAFANA_ADMIN_PASSWORD` | yes      | Grafana admin password                |
 | `SEC_CONTACT_EMAIL`      | for SEC  | real contact, SEC requires it in UA   |
 | `SYMBOLS`, `SYMBOLS_SHARD`, `CRYPTO_SYMBOLS`, `CRYPTO_SYMBOLS_SHARD`, `POLL_INTERVAL`, `POLL_BACKOFF`, `PUBLISH_TIMEOUT` | no | producer scaling knobs |
+| `TOPIC_PARTITIONS`, `FLINK_PARALLELISM`, `TASKMANAGER_SLOTS` | no | Flink/Kafka scale knobs (keep parallelism <= partitions and slots >= 4 x parallelism) |
 | `CLICKHOUSE_*`, `GRAFANA_PORT`, `KAFKA_PORT`, `KAFKA_PORT_2/3` | no | ports/users/db overrides |
 
 ## Layout

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 BROKER="${KAFKA_BROKER:-kafka-1:29092,kafka-2:29092,kafka-3:29092}"
-PARTITIONS=3
+PARTITIONS="${TOPIC_PARTITIONS:-3}"
 REPLICATION_FACTOR=3
 TOPICS=(equities.prices crypto.trades crypto.ohlcv crypto.market forex.rates macro.indicators fundamentals.filings fundamentals.actions fundamentals.statements fundamentals.insider)
 
