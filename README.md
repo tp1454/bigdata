@@ -5,7 +5,9 @@ Kafka, a PyFlink job parses and batches them into ClickHouse, and Grafana
 reads ClickHouse.
 
 ```
-producers (13) --> Kafka (3 brokers, 10 topics) --> Flink (parse + sink) --> ClickHouse (analytics.*) --> Grafana (2 dashboards)
+producers (13) --> Kafka (3 brokers, 10 topics) --> Flink (parse + sink) --> ClickHouse (2 shards x 2 replicas) --> Grafana
+                                                                              |
+                                                                              +--> S3Proxy (cold TTL volume)
 ```
 
 ## Scope and data terms
@@ -36,9 +38,10 @@ make deploy       # build, start, then run the smoke check
 make url          # Grafana / Flink UI / ClickHouse / Kafka endpoints
 ```
 
-The first start creates the Kafka topics and the ClickHouse schema. On an
-existing volume, `make deploy` re-applies topics and schema and resubmits the
-Flink job. Use `make nuke` only when the schema or broker layout changed
+The first start creates the Kafka topics and, once all four ClickHouse nodes
+are healthy, runs the `clickhouse-schema` one-shot to create the cluster
+schema. On an existing volume, `make deploy` re-applies topics and schema and
+resubmits the Flink job. Use `make nuke` only when the schema or broker layout changed
 incompatibly; it deletes all local data. The RF3 layout uses new
 `volumes/kafka-data-1..3` and a fresh Zookeeper, so an old single-broker
 cluster needs `make nuke` (or a `kafka-reassign-partitions` migration); the
@@ -52,6 +55,11 @@ topic script does not rewrite existing RF1 assignments.
 | Flink UI     | http://localhost:8081         |
 | ClickHouse   | http://localhost:8123         |
 | Kafka        | localhost:29092 (bootstrap; 29092-29094) |
+
+`clickhouse` is shard 1, replica 1 and the cluster entry point: Flink and
+Grafana connect to it, and its `Distributed` tables fan out across the four
+ClickHouse nodes. `clickhouse-2`, `clickhouse-3` and `clickhouse-4` are
+internal only. S3Proxy (cold tier) is internal too.
 
 Credentials and ports come from `.env` (see `.env.example`). Compose refuses
 to start without `CLICKHOUSE_PASSWORD` and `GRAFANA_ADMIN_PASSWORD`.
@@ -73,8 +81,16 @@ to start without `CLICKHOUSE_PASSWORD` and `GRAFANA_ADMIN_PASSWORD`.
 | (parse failures)         | `analytics.pipeline_errors`       | Flink dead-letter         |
 
 Topics get `TOPIC_PARTITIONS` partitions (default 3). Tick topics keep 7 days
-in Kafka; ClickHouse keeps 90 days of tick data. Fundamentals topics keep 30
-days, and `fundamentals.filings` is compacted.
+in Kafka; ClickHouse keeps 90 days of tick data. The slow macro/filings/insider
+tables keep 10 years and are partitioned by month; `fundamentals.filings` is
+compacted.
+
+Each public table is a `Distributed` table over a `ReplicatedReplacingMergeTree`
+(`*_local`) pair on two shards. The shard key is `cityHash64(trade_id)` for
+crypto trades (spreads BTC) and `cityHash64(symbol)`-style keys elsewhere, so
+all rows for one symbol stay together. Parts older than 7-30 days (tick) or
+1 year (slow) move to the S3Proxy-backed `cold` volume; deletion still follows
+the old TTL.
 
 ## Delivery semantics
 
@@ -85,11 +101,15 @@ ClickHouse JDBC driver); a failed flush fails the task and the batch is
 replayed. Replays are deduplicated by ClickHouse `ReplacingMergeTree` on
 natural keys (`trade_id`, `symbol + ts`, ...).
 
-Deduplication happens on merge, so read tick tables with `argMax(...)` (as the
-dashboards do) or `FINAL` before relying on uniqueness.
+Deduplication happens on merge within each shard; the clean equity view uses
+`argMax(..., ingested_at)` instead of `FINAL`. Other tick reads should use
+`argMax` or `FINAL` before relying on uniqueness.
 
 Unparseable records are written to `pipeline_errors` (topic, error, truncated
 raw payload) instead of being dropped silently.
+
+A single `clickhouse-keeper` coordinates replication and distributed DDL. It is
+not replicated, so it is the remaining ClickHouse single point.
 
 ## Indicators and analytics
 
@@ -98,8 +118,14 @@ raw payload) instead of being dropped silently.
 simple-average RSI(14) and ATR(14) (`rsi_14_sma`, `atr_14_sma`), 1/5-bar
 returns, 20-bar volatility, and a 20-bar volume average over the stored
 bars (1-minute for equities, daily for indices).
-Both are views, so they stay current without a write job; run
-`make schema` once on an existing volume.
+It is a view, so it stays current without a write job; run `make schema` once
+on an existing volume.
+
+`analytics.equities_indicators_snapshot` holds the same series precomputed by
+a refreshable materialized view every 5 minutes, one refresh per replica from
+that node's local shard. Read the snapshot for dashboards; read the view when
+you need the last few minutes immediately. The refresh scans each shard's full
+history, so it is cheap here but not a true incremental aggregate.
 
 ## Make targets
 
@@ -115,7 +141,7 @@ Run `make` or `make help` for the full list.
 | `make check`           | lint + unit tests + compose validation               |
 | `make test` / `lint`   | pytest / ruff                                        |
 | `make check-data`      | row counts and latest timestamp per table            |
-| `make schema`          | apply ClickHouse schema + views (idempotent)         |
+| `make schema`          | apply schema, TTLs, tiering and indicators MV        |
 | `make job-reset`       | cancel and resubmit the Flink jobs                   |
 | `make query SQL='...'` | one-off ClickHouse query                             |
 | `make feed TOPIC=...`  | tail Kafka messages                                  |
@@ -134,6 +160,7 @@ silently stops moving data.
 |--------------------------|----------|---------------------------------------|
 | `CLICKHOUSE_PASSWORD`    | yes      | ClickHouse `default` user password    |
 | `GRAFANA_ADMIN_PASSWORD` | yes      | Grafana admin password                |
+| `S3_SECRET_KEY`          | no       | S3Proxy/ClickHouse cold-tier secret (default `s3secret`) |
 | `SEC_CONTACT_EMAIL`      | for SEC  | real contact, SEC requires it in UA   |
 | `SYMBOLS`, `SYMBOLS_SHARD`, `CRYPTO_SYMBOLS`, `CRYPTO_SYMBOLS_SHARD`, `POLL_INTERVAL`, `POLL_BACKOFF`, `PUBLISH_TIMEOUT` | no | producer scaling knobs |
 | `TOPIC_PARTITIONS`, `FLINK_PARALLELISM`, `TASKMANAGER_SLOTS` | no | Flink/Kafka scale knobs (keep parallelism <= partitions and slots >= 4 x parallelism) |
@@ -149,7 +176,9 @@ silently stops moving data.
 ├── .env.example                config template (copy to .env)
 ├── init/
 │   ├── kafka/create-topics.sh  topics, partitions, retention
-│   └── clickhouse/01_init.sql  analytics schema
+│   ├── clickhouse/             base schema, views, retention and tiering
+│   └── clickhouse-mv/          per-node refreshable indicators MV
+├── configs/clickhouse/         Keeper + cluster/storage-policy config
 ├── producers/src/              one process per data source
 │   ├── equities/               Yahoo prices, indices, fundamentals, SEC EDGAR
 │   ├── crypto/                 Binance websocket, Binance klines, CoinGecko
@@ -166,10 +195,24 @@ silently stops moving data.
 
 ## Known limits
 
-- Three Kafka brokers (RF3, min ISR 2) on one Zookeeper. Zookeeper is still
-  a single point, and ClickHouse is a single instance with
-  `ReplacingMergeTree` rather than a replicated table. KRaft and ClickHouse
-  replication are not migrated here.
+- Three Kafka brokers (RF3, min ISR 2) on one Zookeeper. Zookeeper and
+  `clickhouse-keeper` are each a single point. ClickHouse itself is now
+  2 shards x 2 replicas with `Distributed` tables; Flink and Grafana still use
+  one node as the entry point, so that node's HTTP availability matters even
+  though the data is replicated.
+- The 2x2 ClickHouse layout replaces the old single-node volume. Existing data
+  needs a copy into the `*_local` tables or a fresh `make nuke`; the SQL files
+  and named volumes are not compatible with the previous single node.
+- ClickHouse partitions are created by `01/03/05` on a fresh volume. An
+  existing cluster uses `make schema`, which re-applies the schema files and
+  the indicators MV; it cannot change a table's PARTITION BY in place.
+- The refreshable indicators MV is experimental in ClickHouse 24.8 and is
+  created per node by `clickhouse-schema` because `ON CLUSTER` crashes the
+  24.8 DDL worker. Each replica rescans its own shard every 5 minutes; it is
+  not an incremental aggregate.
+- S3Proxy is one container with a local directory backend, and Keeper is one
+  node. Neither is replicated; the data and object tiers are separate failure
+  domains from the entry-point node, not highly available ones.
 - Flink checkpoints live in JobManager memory: task failures recover, a
   JobManager restart loses the job. Add a durable state backend and HA for
   anything beyond local use.

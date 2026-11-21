@@ -32,6 +32,7 @@ deploy: ## Rebuild, start and verify the pipeline (SERVICE=x for one service)
 	$(COMPOSE) up -d --build $(SERVICE)
 	@if [ -z "$(SERVICE)" ]; then \
 		set -e; \
+		$(COMPOSE) wait clickhouse-schema; \
 		$(MAKE) topics; \
 		$(MAKE) schema; \
 		$(MAKE) job-reset; \
@@ -86,21 +87,13 @@ check-data: ## Row counts and latest timestamp per table
 		printf '%-22s %s\n' "$$t" "$$out"; \
 	done
 
-schema: ## Apply ClickHouse schema and views (idempotent)
-	@for _ in $$(seq 1 60); do \
-		$(COMPOSE) exec -T clickhouse clickhouse-client --query "SELECT 1" >/dev/null 2>&1 && break; \
-		sleep 2; \
-	done; \
-	engine=$$($(COMPOSE) exec -T clickhouse clickhouse-client --query "SELECT engine FROM system.tables WHERE database='analytics' AND name='equities_prices'" 2>/dev/null); \
-	if [ -n "$$engine" ]; then \
-		case "$$engine" in \
-			*ReplacingMergeTree) ;; \
-			*) echo "FAIL: analytics.equities_prices engine is $$engine; run 'make nuke' or migrate" >&2; exit 1 ;; \
-		esac; \
-	fi; \
-	for f in init/clickhouse/0[2-9]_*.sql; do \
-		$(COMPOSE) exec -T clickhouse clickhouse-client < $$f || exit 1; \
-	done
+schema: ## Apply schema, retention, tiering and the indicators MV
+	@engine=$$($(COMPOSE) exec -T clickhouse clickhouse-client --query "SELECT engine FROM system.tables WHERE database='analytics' AND name='equities_prices'" 2>/dev/null || true); \
+	if [ -n "$$engine" ] && [ "$$engine" != "Distributed" ]; then \
+		echo "FAIL: analytics.equities_prices engine is $$engine; the cluster needs a fresh volume (make nuke)" >&2; exit 1; \
+	fi
+	@$(COMPOSE) wait clickhouse-schema 2>/dev/null || true
+	$(COMPOSE) run --rm clickhouse-schema
 
 job-reset: ## Cancel and resubmit the Flink jobs (after code or topic changes)
 	@ids=""; \

@@ -48,6 +48,13 @@ for topic in $TOPICS; do
 done
 echo "ok: ${TOPICS// /, }"
 
+cluster_hosts=$(ch_query "SELECT count() FROM system.clusters WHERE cluster = 'analytics_cluster'")
+if (( cluster_hosts < 4 )); then
+    echo "FAIL: analytics_cluster has $cluster_hosts hosts, expected 4" >&2
+    exit 1
+fi
+echo "ok: clickhouse cluster ($cluster_hosts hosts)"
+
 for table in $TABLES; do
     if ! ch_query "SELECT count() FROM analytics.$table" >/dev/null 2>&1; then
         echo "FAIL: missing or unreadable table analytics.$table" >&2

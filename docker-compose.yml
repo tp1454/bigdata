@@ -21,6 +21,38 @@ x-producer-env: &producer-env
   POLL_BACKOFF: ${POLL_BACKOFF:-300}
   PUBLISH_TIMEOUT: ${PUBLISH_TIMEOUT:-5}
 
+x-clickhouse-env: &clickhouse-env
+  CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+  CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
+  CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:-s3access}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:-s3secret}
+
+x-clickhouse: &clickhouse
+  image: clickhouse/clickhouse-server:24.8
+  restart: unless-stopped
+  depends_on:
+    clickhouse-keeper:
+      condition: service_healthy
+    s3proxy:
+      condition: service_healthy
+    s3proxy-init:
+      condition: service_completed_successfully
+  environment:
+    <<: *clickhouse-env
+  ulimits:
+    nofile:
+      soft: 262144
+      hard: 262144
+  mem_limit: 1g
+  healthcheck:
+    test: ["CMD-SHELL", "wget -q --spider http://localhost:8123/ping || exit 1"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+    start_period: 20s
+  networks: [streaming]
+
 x-producer: &producer
   build: ./producers
   image: producers:local
@@ -137,30 +169,150 @@ services:
     restart: "no"
     networks: [streaming]
 
+  # ==========================================
+  # CLICKHOUSE CLUSTER (2 shards x 2 replicas)
+  # ==========================================
+  clickhouse-keeper:
+    image: clickhouse/clickhouse-keeper:24.8
+    container_name: clickhouse-keeper
+    restart: unless-stopped
+    mem_limit: 512m
+    volumes:
+      - clickhouse_keeper_data:/var/lib/clickhouse-keeper
+      - ./configs/clickhouse/keeper.xml:/etc/clickhouse-keeper/keeper_config.xml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/9181' 2>/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks: [streaming]
+
+  # S3-compatible cold tier. S3Proxy buckets are directories under /data.
+  s3proxy:
+    image: andrewgaul/s3proxy:2.6.0
+    container_name: s3proxy
+    restart: unless-stopped
+    environment:
+      S3PROXY_AUTHORIZATION: aws-v2-or-v4
+      S3PROXY_IDENTITY: ${S3_ACCESS_KEY:-s3access}
+      S3PROXY_CREDENTIAL: ${S3_SECRET_KEY:-s3secret}
+    mem_limit: 512m
+    volumes:
+      - s3proxy_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/80' 2>/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks: [streaming]
+
+  s3proxy-init:
+    image: andrewgaul/s3proxy:2.6.0
+    container_name: s3proxy-init
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["mkdir -p /data/clickhouse"]
+    volumes:
+      - s3proxy_data:/data
+    networks: [streaming]
+
+  # Shard 1, replica 1. Also the cluster entry point for Flink and Grafana;
+  # queries on its Distributed tables fan out across all four nodes.
   clickhouse:
-    image: clickhouse/clickhouse-server:24.8
+    <<: *clickhouse
     container_name: clickhouse
     ports:
       - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
       - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
     environment:
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
-      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
-    ulimits:
-      nofile:
-        soft: 262144
-        hard: 262144
-    mem_limit: 2g
+      <<: *clickhouse-env
+      CLICKHOUSE_SHARD: "1"
+      CLICKHOUSE_REPLICA: "1"
+      CLICKHOUSE_S3_ENDPOINT: http://s3proxy/clickhouse/clickhouse/
     volumes:
-      - clickhouse_data:/var/lib/clickhouse
-      - ./init/clickhouse:/docker-entrypoint-initdb.d:ro
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:8123/ping || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
+      - clickhouse_data_1:/var/lib/clickhouse
+      - ./configs/clickhouse/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml:ro
+      - ./configs/clickhouse/users.xml:/etc/clickhouse-server/users.d/experimental.xml:ro
+
+  clickhouse-2:
+    <<: *clickhouse
+    container_name: clickhouse-2
+    environment:
+      <<: *clickhouse-env
+      CLICKHOUSE_SHARD: "1"
+      CLICKHOUSE_REPLICA: "2"
+      CLICKHOUSE_S3_ENDPOINT: http://s3proxy/clickhouse/clickhouse-2/
+    volumes:
+      - clickhouse_data_2:/var/lib/clickhouse
+      - ./configs/clickhouse/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml:ro
+      - ./configs/clickhouse/users.xml:/etc/clickhouse-server/users.d/experimental.xml:ro
+
+  clickhouse-3:
+    <<: *clickhouse
+    container_name: clickhouse-3
+    environment:
+      <<: *clickhouse-env
+      CLICKHOUSE_SHARD: "2"
+      CLICKHOUSE_REPLICA: "1"
+      CLICKHOUSE_S3_ENDPOINT: http://s3proxy/clickhouse/clickhouse-3/
+    volumes:
+      - clickhouse_data_3:/var/lib/clickhouse
+      - ./configs/clickhouse/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml:ro
+      - ./configs/clickhouse/users.xml:/etc/clickhouse-server/users.d/experimental.xml:ro
+
+  clickhouse-4:
+    <<: *clickhouse
+    container_name: clickhouse-4
+    environment:
+      <<: *clickhouse-env
+      CLICKHOUSE_SHARD: "2"
+      CLICKHOUSE_REPLICA: "2"
+      CLICKHOUSE_S3_ENDPOINT: http://s3proxy/clickhouse/clickhouse-4/
+    volumes:
+      - clickhouse_data_4:/var/lib/clickhouse
+      - ./configs/clickhouse/cluster.xml:/etc/clickhouse-server/config.d/cluster.xml:ro
+      - ./configs/clickhouse/users.xml:/etc/clickhouse-server/users.d/experimental.xml:ro
+
+  # One schema run after all four servers are healthy. Refreshable MVs cannot
+  # be created with ON CLUSTER on 24.8 (the DDL worker crashes), so the MV is
+  # created on each node separately.
+  clickhouse-schema:
+    image: clickhouse/clickhouse-server:24.8
+    restart: "no"
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      clickhouse-2:
+        condition: service_healthy
+      clickhouse-3:
+        condition: service_healthy
+      clickhouse-4:
+        condition: service_healthy
+    environment:
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
+    volumes:
+      - ./init/clickhouse:/init:ro
+      - ./init/clickhouse-mv:/init-mv:ro
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        engine=$$(clickhouse-client --host clickhouse --password "$$CLICKHOUSE_PASSWORD" \
+          --query "SELECT engine FROM system.tables WHERE database='analytics' AND name='equities_prices'" 2>/dev/null || true)
+        if [ -n "$$engine" ] && [ "$$engine" != "Distributed" ]; then
+          echo "analytics.equities_prices is $$engine, not Distributed; use a fresh volume (make nuke)" >&2
+          exit 1
+        fi
+        for f in /init/0[1-7]_*.sql; do
+          echo "schema: $$f"
+          clickhouse-client --host clickhouse --password "$$CLICKHOUSE_PASSWORD" --multiquery < "$$f"
+        done
+        for host in clickhouse clickhouse-2 clickhouse-3 clickhouse-4; do
+          echo "indicators MV: $$host"
+          clickhouse-client --host "$$host" --password "$$CLICKHOUSE_PASSWORD" --multiquery < /init-mv/08_indicators_mv.sql
+        done
     networks: [streaming]
 
   grafana:
@@ -337,6 +489,8 @@ services:
     depends_on:
       jobmanager:
         condition: service_healthy
+      clickhouse-schema:
+        condition: service_completed_successfully
     restart: "no"
     environment:
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
@@ -377,4 +531,9 @@ networks:
     driver: bridge
 
 volumes:
-  clickhouse_data:
+  clickhouse_data_1:
+  clickhouse_data_2:
+  clickhouse_data_3:
+  clickhouse_data_4:
+  clickhouse_keeper_data:
+  s3proxy_data:

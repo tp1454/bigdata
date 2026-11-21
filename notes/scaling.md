@@ -48,11 +48,42 @@ Next slices on this branch (stack-independent):
   `flink-connector-jdbc` and ClickHouse JDBC JARs in the Flink image and the
   `tables.py` pyFile. A live checkpoint/restart test is still pending.
 
-The k8s submit watcher on `feat/kubernetes-multi-host` still submits one job;
-port the same group loop when the branches merge.
+## Next branch (`feat/clickhouse-scale`, from `feat/flink-native-sink`)
 
-The ClickHouse TTL/partition/materialized-view work is the next branch;
-metrics/autoscaler is last.
+- [x] Remove `FINAL` from the equities clean view; use
+  `argMax(..., ingested_at)` so the view no longer forces a full merge.
+- [x] Add monthly partitions and a 10-year TTL to the slow tables; the
+  `07_tiering.sql` migration applies the TTL (and cold tier) to existing
+  tables.
+- [x] ClickHouse Keeper + replicated ClickHouse + `Distributed` tables and
+  shard keys. Compose runs 2 shards x 2 replicas behind one `analytics_cluster`
+  (shard 1 keys by symbol; crypto trades shard by `trade_id`). The public table
+  names are `Distributed`; `*_local` is the ReplicatedMergeTree on each node.
+  One Keeper is still a single point. The old single-node volume is not
+  compatible: use a fresh volume (`make nuke`) or copy data into `*_local`.
+- [x] Materialized/incremental `equities_indicators` (the window view remains):
+  `equities_indicators` is still the live window view;
+  `equities_indicators_mv` is a refreshable materialized view (5 minutes) that
+  recomputes from each node's local shard, and `equities_indicators_snapshot`
+  is the `Distributed` read table. The refresh is a full rescan of each shard,
+  not a true incremental aggregate; it moves cost off dashboard queries.
+- [x] S3/MinIO tiering. A single S3Proxy container provides the S3 API and a
+  bucket is the `cold` volume of the `tiered` storage policy, one prefix per
+  ClickHouse node. (MinIO's Docker Hub images are no longer published, so the
+  bucket server is the S3Proxy image; the ClickHouse disk config is standard
+  S3 and can point at MinIO or real S3 unchanged.) Tick parts move after 7-30
+  days, slow tables after 1 year, and existing TTL deletion still applies.
+  `07_tiering.sql` applies the policy and TTL to existing tables.
+
+The cluster schema is applied by the `clickhouse-schema` one-shot after all
+four nodes are healthy; `make schema` reruns the same service. Refreshable MVs
+cannot be created with `ON CLUSTER` on 24.8 (the DDL worker segfaults), so the
+MV file is applied to each node separately.
+
+The k8s branch still runs one ClickHouse and mounts these same SQL files, so it
+must add Keeper + the cluster config (or keep its own schema) when the branches
+merge. The k8s submit watcher also still submits one job; port the same group
+loop when the branches merge.
 
 ## Harness
 
@@ -76,9 +107,9 @@ Deployment per shard.
    per-symbol errors, no silent drops, symbol sharding, crypto key/symbols.
 2. `feat/flink-scale`: partitions/parallelism/slots in one config, split jobs
    (done); batching sink via JDBC (done).
-3. `feat/clickhouse-scale`: Keeper + replicated ClickHouse + `Distributed`
-   tables, shard keys, read path, TTLs, tiering. Split into cluster and
-   read/retention branches if it gets too large.
+3. `feat/clickhouse-scale`: read/retention, 2x2 cluster with Keeper +
+   `Distributed`, materialized indicator snapshot, S3 tiering (all done
+   here). A replicated Keeper and a load-balanced entry point remain.
 4. `feat/observability-autoscaling`: Prometheus/alerts, Flink operator,
    autoscaler, savepoints, Kafka broker topology.
 5. `test/scaling-harness` (or the first commit of the producers branch).
@@ -87,12 +118,12 @@ Deployment per shard.
 
 | Blocker | Where | Why it blocks |
 |---|---|---|
-| Single ClickHouse, no sharding/replication | `k8s/base/clickhouse.yaml`, `init/clickhouse/*.sql` | Every insert and query lands on one node; no horizontal path. |
+| Single ClickHouse Keeper / one entry node | `configs/clickhouse/keeper.xml`, `docker-compose.yml` | Replication and DDL stop if Keeper dies; Flink and Grafana still point at node 1. Data is replicated, the entry point is not. |
 | Serial, unsharded producers | `producers/src/equities/yahoo_producer.py`, `producers/src/crypto/binance_ws_producer.py` | One pod per feed; full-day Yahoo fetch per poll; crypto list hardcoded. |
 | Silent drops | `producers/src/base_producer.py`, `binance_ws_producer.py` | Queue full drops records; data loss at high rate. |
 | Symbol key skew | `producers/src/base_producer.py`, `binance_ws_producer.py` | BTC dominates; one key cannot be split across partitions. |
-| Read path `FINAL` + window views | `init/clickhouse/02_clean.sql`, `04_indicators.sql` | Dedupe/indicators recomputed per query; cost grows with history. |
-| Missing TTLs/partitions | `init/clickhouse/01_init.sql`, `05_fundamentals.sql` | Several tables grow forever in one partition. |
+| Read path window view | `init/clickhouse/04_indicators.sql` | `equities_indicators` still recomputes on every query; the 5-minute snapshot is the cheap path. |
+| Full-history indicator refresh | `init/clickhouse/04_indicators.sql` | Each refresh rescans the shard's history; a real incremental aggregate (AggregatingMergeTree state) is still open. |
 | Static Flink/no metrics | `k8s/base/flink.yaml`, `k8s/README.md` | Manual scaling, single JobManager, no lag/backpressure alerts. |
 
 ## Acceptance
