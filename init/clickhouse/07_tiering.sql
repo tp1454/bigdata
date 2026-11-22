@@ -58,3 +58,7 @@ ALTER TABLE analytics.pipeline_errors_local ON CLUSTER analytics_cluster
 ALTER TABLE analytics.pipeline_errors_local ON CLUSTER analytics_cluster
     MODIFY TTL toDateTime(ts) + INTERVAL 7 DAY TO VOLUME 'cold',
         toDateTime(ts) + INTERVAL 30 DAY DELETE;
+
+-- Reference snapshots are republished daily; older versions are useless.
+ALTER TABLE analytics.symbol_catalog_local ON CLUSTER analytics_cluster
+    MODIFY TTL ingested_at + INTERVAL 30 DAY;

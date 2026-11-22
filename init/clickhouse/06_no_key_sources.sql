@@ -72,7 +72,9 @@ CREATE TABLE IF NOT EXISTS analytics.symbol_catalog_local ON CLUSTER analytics_c
     ingested_at DateTime64(3, 'UTC') DEFAULT now64(3)
 )
 ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/symbol_catalog', '{replica}', ingested_at)
-ORDER BY (symbol, exchange);
+PARTITION BY toYYYYMM(ingested_at)
+ORDER BY (symbol, exchange)
+TTL ingested_at + INTERVAL 30 DAY;
 
 CREATE TABLE IF NOT EXISTS analytics.symbol_catalog ON CLUSTER analytics_cluster
 AS analytics.symbol_catalog_local
