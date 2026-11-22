@@ -521,24 +521,17 @@ services:
           exit 1
         fi
         for group in $$groups; do
-          [ "$$group" = "crypto" ] && continue
           name="Kafka_to_ClickHouse_$$group"
           if flink list -m jobmanager:8081 2>/dev/null | grep -q "$$name"; then
             echo "$$name already exists; skipping"
             continue
           fi
-          echo "submitting $$name"
+          echo "submitting $$name (java)"
           FLINK_GROUP=$$group flink run -d -m jobmanager:8081 \
-            -py /opt/flink/usrlib/src/job_kafka_to_clickhouse.py \
-            --pyFiles /opt/flink/usrlib/src/transforms.py,/opt/flink/usrlib/src/config.py \
+            -c com.example.KafkaToClickHouse \
+            /opt/flink/usrlib/flink-sink.jar \
             || { echo "failed to submit $$name" >&2; exit 1; }
         done
-        if ! flink list -m jobmanager:8081 2>/dev/null | grep -q "Kafka_to_ClickHouse_crypto"; then
-          echo "submitting Kafka_to_ClickHouse_crypto (java)"
-          flink run -d -m jobmanager:8081 -c com.example.CryptoToClickHouse \
-            /opt/flink/usrlib/crypto-sink.jar \
-            || { echo "failed to submit Java crypto job" >&2; exit 1; }
-        fi
     networks: [streaming]
 
   kafka-exporter:

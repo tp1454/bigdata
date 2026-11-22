@@ -12,15 +12,14 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import java.util.ArrayList;
 import java.util.List;
 
-public class CryptoToClickHouse {
-    private static final String[] TOPICS = {
-        "crypto.trades", "crypto.ohlcv", "crypto.market"
-    };
-
+public class KafkaToClickHouse {
     public static void main(String[] args) throws Exception {
-        String brokers = getenv("KAFKA_BROKER", "kafka-1:29092,kafka-2:29092,kafka-3:29092");
-        String groupId = getenv("KAFKA_GROUP_ID", "flink_consumer_group") + "_crypto";
+        String group = System.getenv().getOrDefault("FLINK_GROUP", "").trim();
+        List<String> topics = Groups.topics(group);
+        String jobName = Groups.jobName(group);
+        String groupId = Groups.groupId(group);
 
+        String brokers = getenv("KAFKA_BROKER", "kafka-1:29092,kafka-2:29092,kafka-3:29092");
         String jdbcUrl = "jdbc:clickhouse://" + getenv("CLICKHOUSE_HOST", "clickhouse")
                 + ":8123/" + getenv("CLICKHOUSE_DB", "analytics");
         String clickhouseUser = getenv("CLICKHOUSE_USER", "default");
@@ -29,7 +28,7 @@ public class CryptoToClickHouse {
         int parallelism = Integer.parseInt(getenv("FLINK_PARALLELISM", "1"));
         long checkpointInterval = Long.parseLong(getenv("CHECKPOINT_INTERVAL_MS", "60000"));
         long checkpointTimeout = Long.parseLong(getenv("CHECKPOINT_TIMEOUT_MS", "600000"));
-        int batchSize = Integer.parseInt(getenv("CLICKHOUSE_BATCH_SIZE", "10000"));
+        int batchSize = Integer.parseInt(getenv("CLICKHOUSE_BATCH_SIZE", "2000"));
         long flushInterval = Long.parseLong(getenv("CLICKHOUSE_FLUSH_MS", "1000"));
 
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
@@ -38,7 +37,7 @@ public class CryptoToClickHouse {
         env.getCheckpointConfig().setCheckpointTimeout(checkpointTimeout);
 
         List<DataStream<ClickHouseRow>> streams = new ArrayList<>();
-        for (String topic : TOPICS) {
+        for (String topic : topics) {
             KafkaSource<String> source = KafkaSource.<String>builder()
                     .setBootstrapServers(brokers)
                     .setTopics(topic)
@@ -50,7 +49,7 @@ public class CryptoToClickHouse {
 
             DataStream<String> raw = env.fromSource(
                     source, WatermarkStrategy.noWatermarks(), "Kafka_" + topic);
-            streams.add(raw.process(new CryptoParser(topic)));
+            streams.add(raw.process(new MessageParser(topic)));
         }
 
         DataStream<ClickHouseRow> rows = streams.get(0);
@@ -63,7 +62,7 @@ public class CryptoToClickHouse {
                 .name("ClickHouse")
                 .setParallelism(parallelism);
 
-        env.execute("Kafka_to_ClickHouse_crypto");
+        env.execute(jobName);
     }
 
     private static String getenv(String key, String fallback) {

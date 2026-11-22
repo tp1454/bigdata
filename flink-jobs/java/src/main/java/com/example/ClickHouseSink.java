@@ -22,20 +22,46 @@ public class ClickHouseSink extends RichSinkFunction<ClickHouseRow>
         implements CheckpointedFunction {
     private static final long serialVersionUID = 1L;
 
-    private static final Map<String, String> INSERT_SQL = Map.of(
-            "crypto_trades",
-            "INSERT INTO crypto_trades (symbol,timestamp,price,quantity,trade_id,source)"
-                    + " VALUES (?,?,?,?,?,?)",
-            "crypto_ohlcv",
-            "INSERT INTO crypto_ohlcv"
-                    + " (symbol,interval,timestamp,open,high,low,close,volume,source)"
-                    + " VALUES (?,?,?,?,?,?,?,?,?)",
-            "crypto_market_data",
-            "INSERT INTO crypto_market_data"
-                    + " (symbol,timestamp,price,market_cap,volume_24h,source)"
-                    + " VALUES (?,?,?,?,?,?)",
-            "pipeline_errors",
-            "INSERT INTO pipeline_errors (topic,error,raw) VALUES (?,?,?)");
+    private static final Map<String, String> INSERT_SQL = Map.ofEntries(
+            Map.entry("equities_prices",
+                    "INSERT INTO equities_prices"
+                            + " (symbol,ts,open,high,low,close,volume)"
+                            + " VALUES (?,?,?,?,?,?,?)"),
+            Map.entry("crypto_trades",
+                    "INSERT INTO crypto_trades (symbol,timestamp,price,quantity,trade_id,source)"
+                            + " VALUES (?,?,?,?,?,?)"),
+            Map.entry("crypto_ohlcv",
+                    "INSERT INTO crypto_ohlcv"
+                            + " (symbol,interval,timestamp,open,high,low,close,volume,source)"
+                            + " VALUES (?,?,?,?,?,?,?,?,?)"),
+            Map.entry("crypto_market_data",
+                    "INSERT INTO crypto_market_data"
+                            + " (symbol,timestamp,price,market_cap,volume_24h,source)"
+                            + " VALUES (?,?,?,?,?,?)"),
+            Map.entry("forex_rates",
+                    "INSERT INTO forex_rates (pair,timestamp,rate,source) VALUES (?,?,?,?)"),
+            Map.entry("macro_indicators",
+                    "INSERT INTO macro_indicators (indicator,timestamp,value,source)"
+                            + " VALUES (?,?,?,?)"),
+            Map.entry("company_filings",
+                    "INSERT INTO company_filings"
+                            + " (cik,entity_name,sic,accession_number,filing_date,form,"
+                            + "primary_document,source)"
+                            + " VALUES (?,?,?,?,?,?,?,?)"),
+            Map.entry("corporate_actions",
+                    "INSERT INTO corporate_actions (symbol,action,action_date,value,source)"
+                            + " VALUES (?,?,?,?,?)"),
+            Map.entry("fundamentals",
+                    "INSERT INTO fundamentals"
+                            + " (symbol,statement,period,end_date,line_item,value,source)"
+                            + " VALUES (?,?,?,?,?,?,?)"),
+            Map.entry("insider_transactions",
+                    "INSERT INTO insider_transactions"
+                            + " (symbol,insider,position,`transaction`,transaction_date,shares,"
+                            + "value,ownership,source)"
+                            + " VALUES (?,?,?,?,?,?,?,?,?)"),
+            Map.entry("pipeline_errors",
+                    "INSERT INTO pipeline_errors (topic,error,raw) VALUES (?,?,?)"));
 
     private final String url;
     private final String user;
@@ -109,6 +135,8 @@ public class ClickHouseSink extends RichSinkFunction<ClickHouseRow>
                 statement.setNull(index++, Types.OTHER);
             } else if (value instanceof Timestamp) {
                 statement.setTimestamp(index++, (Timestamp) value);
+            } else if (value instanceof java.sql.Date) {
+                statement.setDate(index++, (java.sql.Date) value);
             } else if (value instanceof Double) {
                 statement.setDouble(index++, (Double) value);
             } else if (value instanceof Long) {

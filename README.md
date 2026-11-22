@@ -95,12 +95,14 @@ the old TTL.
 
 ## Delivery semantics
 
-The Flink jobs are **at-least-once**: the JDBC sink batches rows and flushes
-them on every checkpoint, so Kafka offsets commit only after the rows reach
-ClickHouse. The connector is JVM-side (`flink-connector-jdbc` plus the
-ClickHouse JDBC driver); a failed flush fails the task and the batch is
-replayed. Replays are deduplicated by ClickHouse `ReplacingMergeTree` on
-natural keys (`trade_id`, `symbol + ts`, ...).
+The Flink jobs are **at-least-once**. All four groups run the Java DataStream
+job in `flink-jobs/java/`; `ClickHouseSink` buffers up to 2,000 rows or 1 s and
+flushes in `snapshotState()`, so Kafka offsets commit only after the rows reach
+ClickHouse. The sink uses the ClickHouse JDBC driver with batched inserts; a
+failed flush fails the task and the checkpoint is replayed. Replays are
+deduplicated by ClickHouse `ReplacingMergeTree` on natural keys
+(`trade_id`, `symbol + ts`, ...). The design, measurements and tuning notes are
+in [`docs/java-sink.md`](docs/java-sink.md).
 
 Deduplication happens on merge within each shard; the clean equity view uses
 `argMax(..., ingested_at)` instead of `FINAL`. Other tick reads should use
@@ -202,7 +204,9 @@ silently stops moving data.
 │   ├── crypto/                 Binance websocket, Binance klines, CoinGecko
 │   ├── forex/                  Frankfurter (ECB)
 │   └── macro/                  BLS, US Treasury, commodities
-├── flink-jobs/src/             PyFlink job, transforms, config
+├── flink-jobs/java/            Java DataStream job + checkpointed ClickHouse sink
+├── flink-jobs/src/             legacy PyFlink job, transforms, config (not submitted)
+├── docs/java-sink.md           sink decision, measurements, tuning notes
 ├── configs/grafana/            datasource + dashboard provisioning
 ├── configs/prometheus/         scrape config + alert rules
 ├── dashboards/                 Market Analytics, Pipeline Health, Pipeline Input
