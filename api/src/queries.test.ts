@@ -9,17 +9,17 @@ const request = (path: string) =>
 
 describe('reads on the replicated cluster', () => {
   it.each([
-    '/api/equities/daily?symbol=AAPL',
-    '/api/crypto/latest?symbol=BTCUSDT',
-    '/api/crypto/trades?symbol=BTCUSDT',
-    '/api/forex/latest?pair=EURUSD',
-  ])('%s dedupes with FINAL', async (path) => {
+    ['/api/equities/daily?symbol=AAPL', 'FROM analytics.equities_prices_clean'],
+    ['/api/crypto/latest?symbol=BTCUSDT', 'FROM crypto_trades FINAL'],
+    ['/api/crypto/trades?symbol=BTCUSDT', 'FROM crypto_trades FINAL'],
+    ['/api/forex/latest?pair=EURUSD', 'FROM forex_rates FINAL'],
+  ])('%s reads %s', async (path, source) => {
     queries.length = 0
 
     const res = await request(path)
 
     expect(res.status).toBe(200)
     expect(queries).toHaveLength(1)
-    expect(queries[0]).toMatch(/FROM \w+ FINAL/)
+    expect(queries[0]).toContain(source)
   })
 })

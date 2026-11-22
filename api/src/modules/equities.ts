@@ -18,7 +18,7 @@ export const equities = new Elysia({ prefix: '/api/equities' }).get(
     const rowLimit = clampLimit(query.limit)
     const rs = await ch.query({
       query: `SELECT ts, open, high, low, close, volume
-              FROM equities_prices FINAL
+              FROM analytics.equities_prices_clean
               WHERE symbol = {symbol:String}
               ORDER BY ts DESC
               LIMIT ${rowLimit}`,
@@ -39,7 +39,7 @@ export const equities = new Elysia({ prefix: '/api/equities' }).get(
       operationId: 'equities.daily',
       summary: 'Latest OHLCV bars for an equity',
       description:
-        'Newest rows from `equities_prices` for `symbol`, newest first. The producer stores one-minute Yahoo bars. Example: `GET /api/equities/daily?symbol=AAPL&limit=100`.'
+        'Newest rows from `equities_prices_clean` for `symbol`, newest first. The producer stores one-minute Yahoo bars. Example: `GET /api/equities/daily?symbol=AAPL&limit=100`.'
     },
   },
 )

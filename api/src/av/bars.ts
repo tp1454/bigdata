@@ -36,7 +36,8 @@ export type IntradayInterval = keyof typeof INTERVALS
 export const intradayMinutes = (interval: string): number =>
   INTERVALS[interval as IntradayInterval] ?? 0
 
-// Minute bars land in equities_prices; daily/weekly/monthly roll them up in JS.
+// Minute bars land in equities_prices_clean (deduped and sanity-checked);
+// daily/weekly/monthly roll them up in JS.
 export function equityIntraday(
   symbol: string,
   minutes: number,
@@ -49,7 +50,7 @@ export function equityIntraday(
             min(low) AS l,
             argMax(close, ts) AS c,
             sum(volume) AS v
-     FROM analytics.equities_prices FINAL
+     FROM analytics.equities_prices_clean
      WHERE symbol = {symbol:String}
      GROUP BY d
      ORDER BY d DESC
@@ -66,7 +67,7 @@ export function equityDaily(symbol: string, limit = 100000): Promise<Bar[]> {
             min(low) AS l,
             argMax(close, ts) AS c,
             sum(volume) AS v
-     FROM analytics.equities_prices FINAL
+     FROM analytics.equities_prices_clean
      WHERE symbol = {symbol:String}
      GROUP BY d
      ORDER BY d DESC

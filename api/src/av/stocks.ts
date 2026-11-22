@@ -300,7 +300,7 @@ export async function bulkQuotes(p: Params): Promise<AvPayload | Response> {
                    argMax(close, ts) AS price,
                    argMax(volume, ts) AS volume,
                    formatDateTime(max(ts), '%Y-%m-%d %H:%i:%S') AS timestamp
-            FROM analytics.equities_prices FINAL
+            FROM analytics.equities_prices_clean
             WHERE symbol IN {symbols:Array(String)}
             GROUP BY symbol
             ORDER BY symbol`,
@@ -496,7 +496,7 @@ export async function topGainersLosers(p: Params): Promise<AvPayload | Response>
               SELECT symbol, toDate(ts) AS d,
                      argMax(close, ts) AS c,
                      argMax(volume, ts) AS v
-              FROM analytics.equities_prices FINAL
+              FROM analytics.equities_prices_clean
               WHERE ts >= now() - INTERVAL 10 DAY
               GROUP BY symbol, d
             ), ranked AS (
