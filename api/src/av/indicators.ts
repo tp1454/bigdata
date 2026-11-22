@@ -14,8 +14,8 @@ const INDICATOR_NAMES: Record<Kind, string> = {
   SMA: 'Simple Moving Average (SMA)',
   EMA: 'Exponential Moving Average (EMA)',
   WMA: 'Weighted Moving Average (WMA)',
-  RSI: 'Relative Strength Index (RSI)',
-  ATR: 'Average True Range (ATR)',
+  RSI: 'Relative Strength Index (RSI, Wilder)',
+  ATR: 'Average True Range (ATR, Wilder)',
   BBANDS: 'Bollinger Bands (BBANDS)',
   MACD: 'Moving Average Convergence / Divergence (MACD)',
 }
