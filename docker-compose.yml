@@ -360,6 +360,31 @@ services:
     container_name: index-producer
     command: python -m src.equities.index_producer
 
+  options-producer:
+    <<: *producer
+    container_name: options-producer
+    command: python -m src.equities.options_producer
+    environment:
+      <<: *producer-env
+      OPTIONS_MAX_EXPIRIES: ${OPTIONS_MAX_EXPIRIES:-8}
+
+  symbol-catalog-producer:
+    <<: *producer
+    container_name: symbol-catalog-producer
+    command: python -m src.equities.symbol_catalog_producer
+    environment:
+      <<: *producer-env
+      SEC_CONTACT_EMAIL: ${SEC_CONTACT_EMAIL:-}
+
+  institutional-producer:
+    <<: *producer
+    container_name: institutional-producer
+    command: python -m src.equities.institutional_holdings_producer
+    environment:
+      <<: *producer-env
+      SEC_CONTACT_EMAIL: ${SEC_CONTACT_EMAIL:-}
+      INSTITUTIONAL_CIKS: ${INSTITUTIONAL_CIKS:-0001067983}
+
   binance-producer:
     <<: *producer
     container_name: binance-producer

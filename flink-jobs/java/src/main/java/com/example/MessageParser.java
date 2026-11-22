@@ -76,6 +76,15 @@ public class MessageParser extends ProcessFunction<String, ClickHouseRow> {
                 case "fundamentals.insider":
                     out.collect(insider(root));
                     break;
+                case "options.metrics":
+                    out.collect(options(root));
+                    break;
+                case "institutional.holdings":
+                    holdings(root, out);
+                    break;
+                case "reference.symbols":
+                    out.collect(symbol(root));
+                    break;
                 default:
                     out.collect(errorRow("unknown topic", value));
             }
@@ -231,6 +240,65 @@ public class MessageParser extends ProcessFunction<String, ClickHouseRow> {
                 requiredText(row, "source"));
     }
 
+    private ClickHouseRow options(JsonNode row) {
+        return new ClickHouseRow(
+                "options_metrics",
+                requiredText(row, "symbol"),
+                date(requiredText(row, "expiry")),
+                new Timestamp(requiredLong(row, "timestamp")),
+                requiredNumber(row, "underlying_price"),
+                requiredNumber(row, "call_volume"),
+                requiredNumber(row, "put_volume"),
+                requiredNumber(row, "call_oi"),
+                requiredNumber(row, "put_oi"),
+                nullableNumber(row, "put_call_volume_ratio"),
+                nullableNumber(row, "put_call_oi_ratio"),
+                nullableNumber(row, "volume_oi_ratio"),
+                requiredText(row, "source"));
+    }
+
+    private void holdings(JsonNode root, Collector<ClickHouseRow> out) {
+        JsonNode rows = root.get("rows");
+        if (rows == null || !rows.isArray() || rows.isEmpty()) {
+            throw new IllegalArgumentException("empty holdings batch");
+        }
+        String filerCik = requiredText(root, "filer_cik");
+        String filerName = text(root, "filer_name", "");
+        Date period = date(requiredText(root, "period"));
+        Date filingDate = date(requiredText(root, "filing_date"));
+        String form = requiredText(root, "form");
+        String accession = requiredText(root, "accession_number");
+        String source = requiredText(root, "source");
+        for (JsonNode row : rows) {
+            out.collect(new ClickHouseRow(
+                    "institutional_holdings",
+                    filerCik,
+                    filerName,
+                    period,
+                    filingDate,
+                    form,
+                    accession,
+                    requiredText(row, "cusip"),
+                    requiredText(row, "issuer"),
+                    text(row, "title", ""),
+                    requiredNumber(row, "shares"),
+                    text(row, "share_type", ""),
+                    requiredNumber(row, "value"),
+                    source));
+        }
+    }
+
+    private ClickHouseRow symbol(JsonNode row) {
+        return new ClickHouseRow(
+                "symbol_catalog",
+                requiredText(row, "symbol"),
+                text(row, "name", ""),
+                requiredText(row, "exchange"),
+                requiredLong(row, "etf"),
+                nullableLong(row, "cik"),
+                requiredText(row, "source"));
+    }
+
     private ClickHouseRow errorRow(String error, String raw) {
         String truncated = raw.length() > 500 ? raw.substring(0, 500) : raw;
         return new ClickHouseRow("pipeline_errors", topic, error, truncated);
@@ -299,6 +367,21 @@ public class MessageParser extends ProcessFunction<String, ClickHouseRow> {
         }
         try {
             return Double.parseDouble(value.asText());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static Long nullableLong(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        if (value.isNumber()) {
+            return value.asLong();
+        }
+        try {
+            return Long.parseLong(value.asText());
         } catch (NumberFormatException e) {
             return null;
         }

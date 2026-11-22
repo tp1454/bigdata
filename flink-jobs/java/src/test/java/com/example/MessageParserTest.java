@@ -115,6 +115,45 @@ class MessageParserTest {
     }
 
     @Test
+    void optionsRowKeepsNullRatios() {
+        ClickHouseRow row = parse("options.metrics",
+                "{\"symbol\":\"AAPL\",\"expiry\":\"2026-12-18\",\"timestamp\":1700000000000,"
+                        + "\"underlying_price\":200.0,\"call_volume\":0,\"put_volume\":0,"
+                        + "\"call_oi\":0,\"put_oi\":0,\"put_call_volume_ratio\":null,"
+                        + "\"put_call_oi_ratio\":null,\"volume_oi_ratio\":null,"
+                        + "\"source\":\"yahoo\"}").get(0);
+        assertEquals("options_metrics", row.table);
+        assertEquals(Date.valueOf("2026-12-18"), row.values[1]);
+        assertNull(row.values[8]);
+    }
+
+    @Test
+    void holdingsExpandRows() {
+        List<ClickHouseRow> rows = parse("institutional.holdings",
+                "{\"filer_cik\":\"0001067983\",\"filer_name\":\"Berkshire\","
+                        + "\"period\":\"2026-09-30\",\"filing_date\":\"2026-11-16\","
+                        + "\"form\":\"13F-HR\",\"accession_number\":\"a1\","
+                        + "\"source\":\"sec_13f\",\"rows\":[{\"cusip\":\"02005N100\","
+                        + "\"issuer\":\"ALLY\",\"title\":\"COM\",\"shares\":15.0,"
+                        + "\"share_type\":\"SH\",\"value\":150.0}]}");
+        assertEquals(1, rows.size());
+        ClickHouseRow row = rows.get(0);
+        assertEquals("institutional_holdings", row.table);
+        assertEquals("02005N100", row.values[6]);
+        assertEquals(150.0, (Double) row.values[11], 0.0001);
+    }
+
+    @Test
+    void symbolRowKeepsMissingCikNull() {
+        ClickHouseRow row = parse("reference.symbols",
+                "{\"symbol\":\"AAPL\",\"name\":\"Apple Inc.\",\"exchange\":\"NASDAQ\","
+                        + "\"etf\":0,\"cik\":null,\"source\":\"nasdaq_trader\"}").get(0);
+        assertEquals("symbol_catalog", row.table);
+        assertEquals(0L, row.values[3]);
+        assertNull(row.values[4]);
+    }
+
+    @Test
     void badPayloadGoesToErrors() {
         List<ClickHouseRow> rows = parse("equities.prices", "not-json");
         assertEquals(1, rows.size());

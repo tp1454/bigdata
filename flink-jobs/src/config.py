@@ -28,16 +28,21 @@ KAFKA_TOPICS = [
     "fundamentals.actions",
     "fundamentals.statements",
     "fundamentals.insider",
+    "options.metrics",
+    "institutional.holdings",
+    "reference.symbols",
 ]
 
 TOPIC_GROUPS = {
-    "equities": ["equities.prices"],
+    "equities": ["equities.prices", "options.metrics"],
     "crypto": ["crypto.trades", "crypto.ohlcv", "crypto.market"],
     "fundamentals": [
         "fundamentals.filings",
         "fundamentals.actions",
         "fundamentals.statements",
         "fundamentals.insider",
+        "institutional.holdings",
+        "reference.symbols",
     ],
     "macro": ["forex.rates", "macro.indicators"],
 }

@@ -6,11 +6,12 @@ import java.util.Map;
 
 final class Groups {
     private static final Map<String, List<String>> TOPIC_GROUPS = Map.of(
-            "equities", List.of("equities.prices"),
+            "equities", List.of("equities.prices", "options.metrics"),
             "crypto", List.of("crypto.trades", "crypto.ohlcv", "crypto.market"),
             "fundamentals", List.of(
                     "fundamentals.filings", "fundamentals.actions",
-                    "fundamentals.statements", "fundamentals.insider"),
+                    "fundamentals.statements", "fundamentals.insider",
+                    "institutional.holdings", "reference.symbols"),
             "macro", List.of("forex.rates", "macro.indicators"));
 
     private Groups() {

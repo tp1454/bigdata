@@ -60,6 +60,20 @@ public class ClickHouseSink extends RichSinkFunction<ClickHouseRow>
                             + " (symbol,insider,position,`transaction`,transaction_date,shares,"
                             + "value,ownership,source)"
                             + " VALUES (?,?,?,?,?,?,?,?,?)"),
+            Map.entry("options_metrics",
+                    "INSERT INTO options_metrics"
+                            + " (symbol,expiry,timestamp,underlying_price,call_volume,put_volume,"
+                            + "call_oi,put_oi,put_call_volume_ratio,put_call_oi_ratio,"
+                            + "volume_oi_ratio,source)"
+                            + " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"),
+            Map.entry("institutional_holdings",
+                    "INSERT INTO institutional_holdings"
+                            + " (filer_cik,filer_name,period,filing_date,form,accession_number,"
+                            + "cusip,issuer,title,shares,share_type,value,source)"
+                            + " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"),
+            Map.entry("symbol_catalog",
+                    "INSERT INTO symbol_catalog (symbol,name,exchange,etf,cik,source)"
+                            + " VALUES (?,?,?,?,?,?)"),
             Map.entry("pipeline_errors",
                     "INSERT INTO pipeline_errors (topic,error,raw) VALUES (?,?,?)"));
 
