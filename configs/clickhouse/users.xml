@@ -3,9 +3,10 @@
         <default>
             <allow_experimental_refreshable_materialized_view>1</allow_experimental_refreshable_materialized_view>
         </default>
-        <!-- Only SELECTs: the API and Grafana never write. -->
+        <!-- Only SELECTs, but allow session settings: readonly=1 would reject
+             the client's output_format_json_quote_64bit_integers setting. -->
         <readonly>
-            <readonly>1</readonly>
+            <readonly>2</readonly>
         </readonly>
     </profiles>
 
