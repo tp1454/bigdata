@@ -23,7 +23,7 @@ async function indicatorRows(indicator: string): Promise<Bar[]> {
     query_params: { indicator },
     format: 'JSONEachRow',
   })
-  const data = await rs.json<Row[]>()
+  const data = await rs.json<Row>()
   return (Array.isArray(data) ? data : []).map((row) => ({
     date: String(row.d),
     open: Number(row.c),

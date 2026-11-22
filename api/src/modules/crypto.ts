@@ -28,7 +28,7 @@ export const crypto = new Elysia({ prefix: '/api/crypto' })
         query_params: { symbol: query.symbol, source: tradeSource },
         format: 'JSONEachRow',
       })
-      const data = await rs.json<Trade[]>()
+      const data = await rs.json<Trade>()
 
       return {
         meta: { symbol: query.symbol, source: tradeSource, count: data.length },
@@ -60,7 +60,7 @@ export const crypto = new Elysia({ prefix: '/api/crypto' })
         query_params: { symbol: query.symbol, source: tradeSource },
         format: 'JSONEachRow',
       })
-      const data = await rs.json<Trade[]>()
+      const data = await rs.json<Trade>()
 
       return {
         meta: {

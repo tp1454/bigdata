@@ -20,7 +20,7 @@ async function query(queryText: string, params?: Record<string, unknown>): Promi
     query_params: params,
     format: 'JSONEachRow',
   })
-  const data = await rs.json<Row[]>()
+  const data = await rs.json<Row>()
   return Array.isArray(data) ? data : []
 }
 

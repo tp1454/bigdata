@@ -57,9 +57,9 @@ export const allParams = params(...Object.keys(PARAMS))
 
 export const wrap =
   (handler: Handler) =>
-  async ({ query }: { query: Params }) => {
+  async ({ query }: { query: Record<string, unknown> }) => {
     try {
-      const result = await handler(query)
+      const result = await handler(query as Params)
       return result instanceof Response ? result : result.json
     } catch (error) {
       if (error instanceof AvError) {

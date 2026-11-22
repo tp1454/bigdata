@@ -22,7 +22,7 @@ export const forex = new Elysia({ prefix: '/api/forex' }).get(
       query_params: { pair: query.pair },
       format: 'JSONEachRow',
     })
-    const data = await rs.json<Rate[]>()
+    const data = await rs.json<Rate>()
 
     return {
       meta: { pair: query.pair, count: data.length },

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 
-import type { Action, Bar } from './core'
-import { adjustDaily, bucket, bucketAdjusted } from './bars'
+import type { Bar } from './core'
+import { adjustDaily, bucket, bucketAdjusted, type Action } from './bars'
 
 const bar = (
   date: string,

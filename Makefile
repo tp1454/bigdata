@@ -12,7 +12,7 @@ TABLES := equities_prices:ts crypto_trades:timestamp crypto_ohlcv:timestamp cryp
 
 .PHONY: help setup dev up build deploy redeploy down logs ps shell topics feed \
         load test-topics check-data schema job-reset smoke test lint fmt check nuke url query \
-        require-secrets
+        require-secrets api-test api-typecheck java-test
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -142,7 +142,22 @@ lint: ## Lint Python
 fmt: ## Format Python
 	$(RUFF) format producers flink-jobs tests
 
-check: lint test ## Lint, unit tests and compose validation
+api-test: ## Run the Bun API tests
+	@if [ -d api/node_modules ] && command -v bun >/dev/null 2>&1; then \
+		cd api && bun test; \
+	else echo "skip: api tests (run 'cd api && bun install')"; fi
+
+api-typecheck: ## Typecheck the TypeScript API
+	@if [ -d api/node_modules ] && command -v bun >/dev/null 2>&1; then \
+		cd api && bun run typecheck; \
+	else echo "skip: api typecheck (run 'cd api && bun install')"; fi
+
+java-test: ## Run the parser unit tests
+	@if command -v mvn >/dev/null 2>&1; then \
+		cd flink-jobs/java && mvn -q -B test; \
+	else echo "skip: java tests (mvn not installed)"; fi
+
+check: lint test api-test api-typecheck java-test ## Lint, tests, typecheck and compose validation
 	@if [ -f .env ]; then $(COMPOSE) config -q && echo "ok: compose config"; else echo "skip: compose config (no .env)"; fi
 
 nuke: ## DANGER: wipe all data and restart

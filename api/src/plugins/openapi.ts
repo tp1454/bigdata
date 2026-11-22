@@ -13,7 +13,7 @@ at-least-once writes are removed before the response is built.
   function under \`/alphavantage/<FUNCTION>\`, grouped like the
   [Alpha Vantage](https://www.alphavantage.co/documentation/) docs. A
   \`GET /query?function=...\` shim stays for existing clients; \`apikey\` is
-  ignored."
+  ignored.
 
 ## Data notes
 
@@ -86,23 +86,25 @@ export const openapiPlugin = openapi({
         description: 'FX rates from `analytics.forex_rates`.',
       },
     ],
-    'x-tagGroups': [
-      {
-        name: 'Alpha Vantage compatible',
-        tags: [
-          'query',
-          'stocks',
-          'indicators',
-          'fundamentals',
-          'currencies',
-          'economic',
-          'commodities',
-        ],
-      },
-      {
-        name: 'Native endpoints',
-        tags: ['health', 'crypto', 'equities', 'forex'],
-      },
-    ],
+    ...({
+      'x-tagGroups': [
+        {
+          name: 'Alpha Vantage compatible',
+          tags: [
+            'query',
+            'stocks',
+            'indicators',
+            'fundamentals',
+            'currencies',
+            'economic',
+            'commodities',
+          ],
+        },
+        {
+          name: 'Native endpoints',
+          tags: ['health', 'crypto', 'equities', 'forex'],
+        },
+      ],
+    } as Record<string, unknown>),
   },
 })

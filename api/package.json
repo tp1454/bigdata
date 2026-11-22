@@ -5,12 +5,17 @@
   "scripts": {
     "start": "bun run src/index.ts",
     "dev": "bun --watch src/index.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "check": "bun test && tsc --noEmit"
   },
   "dependencies": {
     "@clickhouse/client": "^1.25.0",
     "@elysia/openapi": "^1.4.17",
     "@elysiajs/cors": "^1.4.3",
     "elysia": "^1.4.32"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.5"
   }
 }

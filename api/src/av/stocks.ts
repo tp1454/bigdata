@@ -28,7 +28,7 @@ import {
 
 const INTERVALS = ['1min', '5min', '15min', '30min', '60min'] as const
 
-const compact = (rows: Bar[], p: Params): Bar[] =>
+const compact = <T extends { date: string }>(rows: T[], p: Params): T[] =>
   p.outputsize === 'full' ? rows : rows.slice(0, 100)
 
 const rowsToJson = (
@@ -307,7 +307,7 @@ export async function bulkQuotes(p: Params): Promise<AvPayload | Response> {
     query_params: { symbols },
     format: 'JSONEachRow',
   })
-  const data = await rs.json<Record<string, unknown>[]>()
+  const data = await rs.json<Record<string, unknown>>()
   const quotes = (Array.isArray(data) ? data : []).map((row) => ({
     symbol: String(row.symbol),
     price: px(Number(row.price)),
@@ -346,7 +346,7 @@ async function catalog(where: string, params: Record<string, unknown>, limit = 2
     query_params: params,
     format: 'JSONEachRow',
   })
-  const data = await rs.json<Record<string, unknown>[]>()
+  const data = await rs.json<Record<string, unknown>>()
   return (Array.isArray(data) ? data : []).map(
     (row): CatalogRow => ({
       symbol: String(row.symbol),
@@ -514,7 +514,7 @@ export async function topGainersLosers(p: Params): Promise<AvPayload | Response>
             GROUP BY symbol`,
     format: 'JSONEachRow',
   })
-  const data = await rs.json<Record<string, unknown>[]>()
+  const data = await rs.json<Record<string, unknown>>()
   const movers: MoverRow[] = (Array.isArray(data) ? data : []).map((row) => ({
     symbol: String(row.symbol),
     last: Number(row.last),
@@ -581,7 +581,7 @@ export async function putCallRatio(
     query_params: params,
     format: 'JSONEachRow',
   })
-  const data = await rs.json<Record<string, unknown>[]>()
+  const data = await rs.json<Record<string, unknown>>()
   const rows = (Array.isArray(data) ? data : [])
     .map(
       (row): RatioRow => ({

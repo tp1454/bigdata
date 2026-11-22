@@ -12,7 +12,7 @@ async function rows(
     query_params: params,
     format: 'JSONEachRow',
   })
-  const data = await rs.json<Row[]>()
+  const data = await rs.json<Row>()
   return (Array.isArray(data) ? data : []).map((r) => ({
     date: String(r.d ?? ''),
     open: Number(r.o),
@@ -188,7 +188,7 @@ export async function corporateActions(symbol: string): Promise<Action[]> {
     query_params: { symbol },
     format: 'JSONEachRow',
   })
-  const data = await rs.json<Row[]>()
+  const data = await rs.json<Row>()
   return (Array.isArray(data) ? data : []).map((r) => ({
     action: String(r.action),
     date: String(r.d),

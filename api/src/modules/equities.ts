@@ -25,7 +25,7 @@ export const equities = new Elysia({ prefix: '/api/equities' }).get(
       query_params: { symbol: query.symbol },
       format: 'JSONEachRow',
     })
-    const data = await rs.json<Bar[]>()
+    const data = await rs.json<Bar>()
 
     return {
       meta: { symbol: query.symbol, limit: rowLimit, count: data.length },

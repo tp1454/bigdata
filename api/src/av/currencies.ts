@@ -59,7 +59,7 @@ async function rows(query: string, params?: Record<string, unknown>): Promise<Ro
     query_params: params,
     format: 'JSONEachRow',
   })
-  const data = await rs.json<Row[]>()
+  const data = await rs.json<Row>()
   return Array.isArray(data) ? data : []
 }
 
