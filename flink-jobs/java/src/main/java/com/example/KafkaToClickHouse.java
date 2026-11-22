@@ -33,7 +33,8 @@ public class KafkaToClickHouse {
 
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setParallelism(parallelism);
-        env.enableCheckpointing(checkpointInterval, CheckpointingMode.EXACTLY_ONCE);
+        // The JDBC sink is not transactional, so the pipeline is at-least-once.
+        env.enableCheckpointing(checkpointInterval, CheckpointingMode.AT_LEAST_ONCE);
         env.getCheckpointConfig().setCheckpointTimeout(checkpointTimeout);
 
         List<DataStream<ClickHouseRow>> streams = new ArrayList<>();
