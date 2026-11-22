@@ -610,7 +610,7 @@ services:
       - --kafka.server=kafka-2:29092
       - --kafka.server=kafka-3:29092
       - --web.listen-address=:9308
-      - '--topic.filter=^(equities|crypto|forex|macro|fundamentals)\..*$'
+      - '--topic.filter=^(equities|crypto|forex|macro|fundamentals|institutional|reference)\..*$'
     depends_on:
       kafka-init:
         condition: service_completed_successfully
