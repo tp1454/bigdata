@@ -182,4 +182,37 @@ describe('alphavantage compatibility', () => {
     const body = (await res.json()) as Record<string, string>
     expect(body['Error Message']).toContain('not served')
   })
+
+  it('rejects a crypto rate against a non-USD quote', async () => {
+    chTest.respond = () => {
+      throw new Error('must not query ClickHouse')
+    }
+    const res = await request(
+      '/query?function=CURRENCY_EXCHANGE_RATE&from_currency=BTC&to_currency=EUR',
+    )
+    const body = (await res.json()) as Record<string, string>
+    expect(body['Error Message']).toContain('quoted in USD')
+  })
+
+  it('compares institutional holdings against the previous period', async () => {
+    chTest.respond = (query) => {
+      if (query.includes('FROM analytics.symbol_catalog')) {
+        return [{ name: 'Apple Inc.' }]
+      }
+      return [
+        { filer_name: 'Growth Fund', shares_held: 150, last_reported: '2026-09-30', previous_shares: 100 },
+        { filer_name: 'Index Fund', shares_held: 100, last_reported: '2026-09-30', previous_shares: 100 },
+      ]
+    }
+    const res = await request(
+      '/query?function=INSTITUTIONAL_HOLDINGS&symbol=AAPL',
+    )
+    const body = (await res.json()) as Record<string, any>
+    expect(body.total_institutional_shares).toBe('250')
+    expect(body.holders_with_increased_holdings).toBe('1')
+    expect(body.shares_with_increased_holdings).toBe('50')
+    expect(body.holdings[0].shares_changed).toBe('50')
+    expect(body.holdings[0].change_type).toBe('increased')
+    expect(body.holdings[1].change_type).toBe('unchanged')
+  })
 })

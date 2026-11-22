@@ -1,6 +1,7 @@
 import { ch } from '../clickhouse'
 import {
   need,
+  pct,
   px,
   raw,
   vol,
@@ -278,39 +279,63 @@ export async function institutionalHoldings(p: Params): Promise<AvPayload | Resp
 
   const rows = token
     ? await query(
-        `SELECT filer_name,
-                sum(shares) AS shares_held,
-                sum(value) AS value_held,
-                toString(max(filing_date)) AS last_reported
-         FROM analytics.institutional_holdings FINAL
-         WHERE positionCaseInsensitive(issuer, {token:String}) > 0
-         GROUP BY filer_name
-         ORDER BY shares_held DESC
+        `WITH periods AS (
+            SELECT filer_name, period,
+                   sum(shares) AS shares_held,
+                   max(filing_date) AS last_reported
+            FROM analytics.institutional_holdings FINAL
+            WHERE positionCaseInsensitive(issuer, {token:String}) > 0
+            GROUP BY filer_name, period
+         ), ranked AS (
+            SELECT *,
+                   row_number() OVER (PARTITION BY filer_name ORDER BY period DESC) AS rn
+            FROM periods
+         )
+         SELECT cur.filer_name AS filer_name,
+                cur.shares_held AS shares_held,
+                toString(cur.last_reported) AS last_reported,
+                ifNull(prev.shares_held, cur.shares_held) AS previous_shares
+         FROM ranked AS cur
+         LEFT JOIN ranked AS prev
+           ON cur.filer_name = prev.filer_name AND prev.rn = 2
+         WHERE cur.rn = 1
+         ORDER BY cur.shares_held DESC
          LIMIT 100`,
         { token },
       )
     : []
 
-  const holdings = rows.map((row) => ({
-    holder_name: raw(row.filer_name),
-    shares_held: vol(Number(row.shares_held)),
-    shares_changed: '0',
-    shares_changed_percentage: '0%',
-    change_type: 'unchanged',
-    last_reported: raw(row.last_reported),
+  const parsed = rows.map((row) => {
+    const shares = Number(row.shares_held)
+    const previous = Number(row.previous_shares)
+    return { name: raw(row.filer_name), shares, change: shares - previous, previous, last: raw(row.last_reported) }
+  })
+  const holdings = parsed.map((row) => ({
+    holder_name: row.name,
+    shares_held: vol(row.shares),
+    shares_changed: vol(row.change),
+    shares_changed_percentage:
+      row.previous > 0 ? pct((row.change / row.previous) * 100) : '0%',
+    change_type:
+      row.change > 0 ? 'increased' : row.change < 0 ? 'decreased' : 'unchanged',
+    last_reported: row.last,
   }))
-  const totalShares = rows.reduce((sum, row) => sum + Number(row.shares_held), 0)
+  const total = (pick: (row: (typeof parsed)[number]) => boolean) =>
+    parsed.filter(pick).reduce((sum, row) => sum + row.shares, 0)
+  const totalChange = (pick: (row: (typeof parsed)[number]) => boolean) =>
+    parsed.filter(pick).reduce((sum, row) => sum + row.change, 0)
+  const totalShares = total(() => true)
 
   const json = {
     symbol,
     total_institutional_holders: String(holdings.length),
     total_institutional_shares: vol(totalShares),
-    holders_with_increased_holdings: '0',
-    shares_with_increased_holdings: '0',
-    holders_with_decreased_holdings: '0',
-    shares_with_decreased_holdings: '0',
-    holders_with_unchanged_holdings: String(holdings.length),
-    shares_with_unchanged_holdings: vol(totalShares),
+    holders_with_increased_holdings: String(parsed.filter((row) => row.change > 0).length),
+    shares_with_increased_holdings: vol(totalChange((row) => row.change > 0)),
+    holders_with_decreased_holdings: String(parsed.filter((row) => row.change < 0).length),
+    shares_with_decreased_holdings: vol(totalChange((row) => row.change < 0)),
+    holders_with_unchanged_holdings: String(parsed.filter((row) => row.change === 0).length),
+    shares_with_unchanged_holdings: vol(total((row) => row.change === 0)),
     total_institutional_ownership_percentage: '',
     holdings,
   }

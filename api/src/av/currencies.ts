@@ -114,6 +114,12 @@ export async function currencyExchangeRate(
   let refreshed = ''
 
   if (isCrypto(from)) {
+    if (to !== 'USD' && to !== 'USDT') {
+      throw new AvError(
+        `Invalid API call: crypto rates are quoted in USD; ${from}/${to} is not supported.`,
+      )
+    }
+    const pair = `${from}${to === 'USD' ? 'USDT' : to}`
     const coin = COIN_IDS[from]
     if (coin) {
       const latest = await rows(
@@ -130,7 +136,6 @@ export async function currencyExchangeRate(
       }
     }
     if (rate === undefined) {
-      const pair = `${from}${to === 'USD' ? 'USDT' : to}`
       const latest = await rows(
         `SELECT argMax(close, timestamp) AS price,
                 formatDateTime(max(timestamp), '%Y-%m-%d %H:%i:%S') AS ts
