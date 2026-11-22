@@ -8,3 +8,5 @@ AGENTS.md
 .vscode/
 .venv/
 node_modules/
+
+flink-jobs/java/target/

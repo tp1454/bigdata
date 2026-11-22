@@ -360,6 +360,31 @@ services:
     container_name: index-producer
     command: python -m src.equities.index_producer
 
+  options-producer:
+    <<: *producer
+    container_name: options-producer
+    command: python -m src.equities.options_producer
+    environment:
+      <<: *producer-env
+      OPTIONS_MAX_EXPIRIES: ${OPTIONS_MAX_EXPIRIES:-8}
+
+  symbol-catalog-producer:
+    <<: *producer
+    container_name: symbol-catalog-producer
+    command: python -m src.equities.symbol_catalog_producer
+    environment:
+      <<: *producer-env
+      SEC_CONTACT_EMAIL: ${SEC_CONTACT_EMAIL:-}
+
+  institutional-producer:
+    <<: *producer
+    container_name: institutional-producer
+    command: python -m src.equities.institutional_holdings_producer
+    environment:
+      <<: *producer-env
+      SEC_CONTACT_EMAIL: ${SEC_CONTACT_EMAIL:-}
+      INSTITUTIONAL_CIKS: ${INSTITUTIONAL_CIKS:-0001067983}
+
   binance-producer:
     <<: *producer
     container_name: binance-producer
@@ -476,6 +501,8 @@ services:
       FLINK_PROPERTIES: |
         jobmanager.rpc.address: jobmanager
         taskmanager.numberOfTaskSlots: ${TASKMANAGER_SLOTS:-4}
+        taskmanager.memory.process.size: 6g
+        taskmanager.memory.task.off-heap.size: 1g
         metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
         metrics.reporter.prom.port: 9249
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
@@ -524,10 +551,10 @@ services:
             echo "$$name already exists; skipping"
             continue
           fi
-          echo "submitting $$name"
+          echo "submitting $$name (java)"
           FLINK_GROUP=$$group flink run -d -m jobmanager:8081 \
-            -py /opt/flink/usrlib/src/job_kafka_to_clickhouse.py \
-            --pyFiles /opt/flink/usrlib/src/transforms.py,/opt/flink/usrlib/src/config.py \
+            -c com.example.KafkaToClickHouse \
+            /opt/flink/usrlib/flink-sink.jar \
             || { echo "failed to submit $$name" >&2; exit 1; }
         done
     networks: [streaming]

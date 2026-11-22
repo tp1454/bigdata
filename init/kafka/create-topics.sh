@@ -4,7 +4,7 @@ set -euo pipefail
 BROKER="${KAFKA_BROKER:-kafka-1:29092,kafka-2:29092,kafka-3:29092}"
 PARTITIONS="${TOPIC_PARTITIONS:-3}"
 REPLICATION_FACTOR=3
-TOPICS=(equities.prices crypto.trades crypto.ohlcv crypto.market forex.rates macro.indicators fundamentals.filings fundamentals.actions fundamentals.statements fundamentals.insider)
+TOPICS=(equities.prices crypto.trades crypto.ohlcv crypto.market forex.rates macro.indicators fundamentals.filings fundamentals.actions fundamentals.statements fundamentals.insider options.metrics institutional.holdings reference.symbols)
 
 until kafka-topics --bootstrap-server "$BROKER" --list >/dev/null 2>&1; do
   echo "Waiting for Kafka at $BROKER..."
@@ -27,18 +27,20 @@ for topic in "${TOPICS[@]}"; do
 done
 
 # High-frequency tick data: keep a bounded local window (7 days).
-for topic in equities.prices crypto.trades crypto.ohlcv crypto.market forex.rates; do
+for topic in equities.prices crypto.trades crypto.ohlcv crypto.market forex.rates options.metrics; do
   kafka-configs --bootstrap-server "$BROKER" --alter --entity-type topics \
     --entity-name "$topic" --add-config retention.ms=604800000,min.insync.replicas=2
 done
 
-# Filings are keyed snapshots: compact old versions, keep 30 days.
-kafka-configs --bootstrap-server "$BROKER" --alter --entity-type topics \
-  --entity-name fundamentals.filings --add-config 'cleanup.policy=compact,retention.ms=2592000000,min.insync.replicas=2'
+# Filings and symbol snapshots are keyed snapshots: compact old versions, keep 30 days.
+for topic in fundamentals.filings reference.symbols; do
+  kafka-configs --bootstrap-server "$BROKER" --alter --entity-type topics \
+    --entity-name "$topic" --add-config 'cleanup.policy=compact,retention.ms=2592000000,min.insync.replicas=2'
+done
 
-# Corporate actions, statements and insider rows are keyed events, not
-# snapshots: keep 30 days so a replay can rebuild recent history.
-for topic in fundamentals.actions fundamentals.statements fundamentals.insider; do
+# Corporate actions, statements, insider rows and 13F batches are keyed events,
+# not snapshots: keep 30 days so a replay can rebuild recent history.
+for topic in fundamentals.actions fundamentals.statements fundamentals.insider institutional.holdings; do
   kafka-configs --bootstrap-server "$BROKER" --alter --entity-type topics \
     --entity-name "$topic" --add-config retention.ms=2592000000,min.insync.replicas=2
 done

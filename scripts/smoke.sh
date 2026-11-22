@@ -3,8 +3,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-TOPICS="equities.prices crypto.trades crypto.ohlcv crypto.market forex.rates macro.indicators fundamentals.filings fundamentals.actions fundamentals.statements fundamentals.insider"
-TABLES="equities_prices crypto_trades crypto_ohlcv crypto_market_data forex_rates macro_indicators company_filings corporate_actions fundamentals insider_transactions pipeline_errors"
+TOPICS="equities.prices crypto.trades crypto.ohlcv crypto.market forex.rates macro.indicators fundamentals.filings fundamentals.actions fundamentals.statements fundamentals.insider options.metrics institutional.holdings reference.symbols"
+TABLES="equities_prices crypto_trades crypto_ohlcv crypto_market_data forex_rates macro_indicators company_filings corporate_actions fundamentals insider_transactions options_metrics institutional_holdings symbol_catalog pipeline_errors"
 DEADLINE_SECONDS=180
 
 wait_until() {

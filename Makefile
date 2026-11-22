@@ -6,9 +6,9 @@ PYTEST := $(if $(wildcard .venv/bin/pytest),.venv/bin/pytest,python3 -m pytest)
 RUFF := $(if $(wildcard .venv/bin/ruff),.venv/bin/ruff,ruff)
 
 KAFKA_BROKERS := kafka-1:29092,kafka-2:29092,kafka-3:29092
-KAFKA_TOPICS := equities.prices crypto.trades crypto.ohlcv crypto.market forex.rates macro.indicators fundamentals.filings fundamentals.actions fundamentals.statements fundamentals.insider
+KAFKA_TOPICS := equities.prices crypto.trades crypto.ohlcv crypto.market forex.rates macro.indicators fundamentals.filings fundamentals.actions fundamentals.statements fundamentals.insider options.metrics institutional.holdings reference.symbols
 # table:time-column pairs for freshness checks
-TABLES := equities_prices:ts crypto_trades:timestamp crypto_ohlcv:timestamp crypto_market_data:timestamp forex_rates:timestamp macro_indicators:timestamp company_filings:filing_date corporate_actions:action_date fundamentals:end_date insider_transactions:transaction_date pipeline_errors:ts
+TABLES := equities_prices:ts crypto_trades:timestamp crypto_ohlcv:timestamp crypto_market_data:timestamp forex_rates:timestamp macro_indicators:timestamp company_filings:filing_date corporate_actions:action_date fundamentals:end_date insider_transactions:transaction_date options_metrics:timestamp institutional_holdings:period symbol_catalog:ingested_at pipeline_errors:ts
 
 .PHONY: help setup dev up build deploy redeploy down logs ps shell topics feed \
         load test-topics check-data schema job-reset smoke test lint fmt check nuke url query

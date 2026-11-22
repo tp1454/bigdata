@@ -71,6 +71,30 @@ def _fundamental_rows(d):
     ]])
 
 
+def _holding_rows(d):
+    """Expand a 13F batch; empty batches are dead-lettered."""
+    if not d.get("rows"):
+        raise ValueError("empty holdings batch")
+    return iter([[
+        (
+            d["filer_cik"],
+            d.get("filer_name") or "",
+            _to_date(d["period"]),
+            _to_date(d["filing_date"]),
+            d["form"],
+            d["accession_number"],
+            row["cusip"],
+            row["issuer"],
+            row.get("title") or "",
+            float(row["shares"]),
+            row.get("share_type") or "",
+            float(row["value"]),
+            d["source"],
+        )
+        for row in d["rows"]
+    ]])
+
+
 # ==========================================
 # 2. HÀM XỬ LÝ ĐẶC BIỆT (1 JSON -> NHIỀU DÒNG)
 # ==========================================
@@ -206,6 +230,44 @@ TOPICS = {
             float(d["shares"]),
             d.get("value"),
             d["ownership"],
+            d["source"]
+        )]),
+    ),
+    "options.metrics": (
+        "options_metrics",
+        ["symbol", "expiry", "timestamp", "underlying_price", "call_volume", "put_volume",
+         "call_oi", "put_oi", "put_call_volume_ratio", "put_call_oi_ratio",
+         "volume_oi_ratio", "source"],
+        lambda d: iter([(
+            d["symbol"],
+            _to_date(d["expiry"]),
+            _ms_to_dt(d["timestamp"]),
+            float(d["underlying_price"]),
+            float(d["call_volume"]),
+            float(d["put_volume"]),
+            float(d["call_oi"]),
+            float(d["put_oi"]),
+            d.get("put_call_volume_ratio"),
+            d.get("put_call_oi_ratio"),
+            d.get("volume_oi_ratio"),
+            d["source"]
+        )]),
+    ),
+    "institutional.holdings": (
+        "institutional_holdings",
+        ["filer_cik", "filer_name", "period", "filing_date", "form", "accession_number",
+         "cusip", "issuer", "title", "shares", "share_type", "value", "source"],
+        _holding_rows,
+    ),
+    "reference.symbols": (
+        "symbol_catalog",
+        ["symbol", "name", "exchange", "etf", "cik", "source"],
+        lambda d: iter([(
+            d["symbol"],
+            d.get("name") or "",
+            d["exchange"],
+            int(d.get("etf") or 0),
+            d.get("cik"),
             d["source"]
         )]),
     ),

@@ -5,7 +5,7 @@ Kafka, a PyFlink job parses and batches them into ClickHouse, and Grafana
 reads ClickHouse.
 
 ```
-producers (13) --> Kafka (3 brokers, 10 topics) --> Flink (parse + sink) --> ClickHouse (2 shards x 2 replicas) --> Grafana
+producers (16) --> Kafka (3 brokers, 13 topics) --> Flink (parse + sink) --> ClickHouse (2 shards x 2 replicas) --> Grafana
                                                                               |
                                                                               +--> S3Proxy (cold TTL volume)
 ```
@@ -19,11 +19,12 @@ access to an upstream source is not a license to redistribute its data.
 
 | Source | Used for | Before scaling |
 |---|---|---|
-| Yahoo Finance (`yfinance`) | equities, indices, commodities, fundamentals, insiders, corporate actions | Unofficial; check Yahoo's terms and rate limits |
+| Yahoo Finance (`yfinance`) | equities, indices, options, commodities, fundamentals, insiders, corporate actions | Unofficial; check Yahoo's terms and rate limits |
 | Binance, CoinGecko | crypto trades, market data, klines | Check API terms, rate limits, and redistribution rules |
 | Frankfurter (ECB) | FX rates | Check terms and attribution requirements |
 | BLS, US Treasury | macro series, yield curve | Public data; respect each site's terms and rate limits |
-| SEC EDGAR | filings | Set a real `SEC_CONTACT_EMAIL`; follow SEC's fair-access policy |
+| SEC EDGAR | filings, 13F holdings | Set a real `SEC_CONTACT_EMAIL`; follow SEC's fair-access policy |
+| Nasdaq Trader | symbol catalogue | Check the site's terms and rate limits |
 
 Keep credentials in `.env` (gitignored) and never commit them. For commercial
 use, redistribution, or an SLA, obtain a license from the data source or use a
@@ -79,12 +80,15 @@ to start without `CLICKHOUSE_PASSWORD` and `GRAFANA_ADMIN_PASSWORD`.
 | `fundamentals.actions`   | `analytics.corporate_actions`     | Yahoo dividends/splits    |
 | `fundamentals.statements` | `analytics.fundamentals`         | Yahoo statements/earnings |
 | `fundamentals.insider`   | `analytics.insider_transactions`  | Yahoo insiders            |
+| `options.metrics`        | `analytics.options_metrics`       | Yahoo option chains       |
+| `institutional.holdings` | `analytics.institutional_holdings`| SEC 13F filings           |
+| `reference.symbols`      | `analytics.symbol_catalog`        | Nasdaq Trader + SEC CIKs  |
 | (parse failures)         | `analytics.pipeline_errors`       | Flink dead-letter         |
 
 Topics get `TOPIC_PARTITIONS` partitions (default 3). Tick topics keep 7 days
-in Kafka; ClickHouse keeps 90 days of tick data. The slow macro/filings/insider
-tables keep 10 years and are partitioned by month; `fundamentals.filings` is
-compacted.
+in Kafka; ClickHouse keeps 90 days of tick data. Macro/filings/insider/holdings
+tables keep 10 years and are partitioned by month; `fundamentals.filings` and
+`reference.symbols` are compacted, and options metrics keep 5 years.
 
 Each public table is a `Distributed` table over a `ReplicatedReplacingMergeTree`
 (`*_local`) pair on two shards. The shard key is `cityHash64(trade_id)` for
@@ -95,12 +99,14 @@ the old TTL.
 
 ## Delivery semantics
 
-The Flink jobs are **at-least-once**: the JDBC sink batches rows and flushes
-them on every checkpoint, so Kafka offsets commit only after the rows reach
-ClickHouse. The connector is JVM-side (`flink-connector-jdbc` plus the
-ClickHouse JDBC driver); a failed flush fails the task and the batch is
-replayed. Replays are deduplicated by ClickHouse `ReplacingMergeTree` on
-natural keys (`trade_id`, `symbol + ts`, ...).
+The Flink jobs are **at-least-once**. All four groups run the Java DataStream
+job in `flink-jobs/java/`; `ClickHouseSink` buffers up to 2,000 rows or 1 s and
+flushes in `snapshotState()`, so Kafka offsets commit only after the rows reach
+ClickHouse. The sink uses the ClickHouse JDBC driver with batched inserts; a
+failed flush fails the task and the checkpoint is replayed. Replays are
+deduplicated by ClickHouse `ReplacingMergeTree` on natural keys
+(`trade_id`, `symbol + ts`, ...). The design, measurements and tuning notes are
+in [`docs/java-sink.md`](docs/java-sink.md).
 
 Deduplication happens on merge within each shard; the clean equity view uses
 `argMax(..., ingested_at)` instead of `FINAL`. Other tick reads should use
@@ -180,6 +186,8 @@ silently stops moving data.
 | `GRAFANA_ADMIN_PASSWORD` | yes      | Grafana admin password                |
 | `S3_SECRET_KEY`          | no       | S3Proxy/ClickHouse cold-tier secret (default `s3secret`) |
 | `SEC_CONTACT_EMAIL`      | for SEC  | real contact, SEC requires it in UA   |
+| `OPTIONS_MAX_EXPIRIES`   | no       | option expiries per symbol (default 8) |
+| `INSTITUTIONAL_CIKS`     | no       | 13F filer CIKs (default Berkshire)    |
 | `SYMBOLS`, `SYMBOLS_SHARD`, `CRYPTO_SYMBOLS`, `CRYPTO_SYMBOLS_SHARD`, `POLL_INTERVAL`, `POLL_BACKOFF`, `PUBLISH_TIMEOUT` | no | producer scaling knobs |
 | `TOPIC_PARTITIONS`, `FLINK_PARALLELISM`, `TASKMANAGER_SLOTS` | no | Flink/Kafka scale knobs (keep parallelism <= partitions and slots >= 4 x parallelism) |
 | `CLICKHOUSE_*`, `GRAFANA_PORT`, `PROMETHEUS_PORT`, `KAFKA_PORT`, `KAFKA_PORT_2/3` | no | ports/users/db overrides |
@@ -198,11 +206,13 @@ silently stops moving data.
 │   └── clickhouse-mv/          per-node refreshable indicators MV
 ├── configs/clickhouse/         Keeper + cluster/storage-policy config
 ├── producers/src/              one process per data source
-│   ├── equities/               Yahoo prices, indices, fundamentals, SEC EDGAR
+│   ├── equities/               Yahoo prices/options, indices, SEC 13F, symbol catalog
 │   ├── crypto/                 Binance websocket, Binance klines, CoinGecko
 │   ├── forex/                  Frankfurter (ECB)
 │   └── macro/                  BLS, US Treasury, commodities
-├── flink-jobs/src/             PyFlink job, transforms, config
+├── flink-jobs/java/            Java DataStream job + checkpointed ClickHouse sink
+├── flink-jobs/src/             legacy PyFlink job, transforms, config (not submitted)
+├── docs/java-sink.md           sink decision, measurements, tuning notes
 ├── configs/grafana/            datasource + dashboard provisioning
 ├── configs/prometheus/         scrape config + alert rules
 ├── dashboards/                 Market Analytics, Pipeline Health, Pipeline Input
@@ -236,6 +246,10 @@ silently stops moving data.
   JobManager restart loses the job. Add a durable state backend and HA for
   anything beyond local use.
 - No schema registry; producers and the transform mapping are the contract.
+- No-key additions are best-effort: Yahoo exposes current option chains only
+  (no historical chains), SEC 13F holdings are keyed by CUSIP without a ticker
+  mapping, and the Nasdaq Trader catalogue covers currently listed symbols,
+  not delisted history.
 - Grafana installs `grafana-clickhouse-datasource` at startup, so the first
   start needs network access.
 - 90-day ClickHouse TTL and 7-day Kafka retention are demo choices; change
