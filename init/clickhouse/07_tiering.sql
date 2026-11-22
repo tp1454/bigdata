@@ -61,4 +61,4 @@ ALTER TABLE analytics.pipeline_errors_local ON CLUSTER analytics_cluster
 
 -- Reference snapshots are republished daily; older versions are useless.
 ALTER TABLE analytics.symbol_catalog_local ON CLUSTER analytics_cluster
-    MODIFY TTL ingested_at + INTERVAL 30 DAY;
+    MODIFY TTL toDateTime(ingested_at) + INTERVAL 30 DAY;
