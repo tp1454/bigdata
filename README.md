@@ -57,6 +57,12 @@ topic script does not rewrite existing RF1 assignments.
 | Prometheus   | http://localhost:9090         |
 | ClickHouse   | http://localhost:8123         |
 | Kafka        | localhost:29092 (bootstrap; 29092-29094) |
+| API          | http://localhost:4000         |
+| MCP bridge   | http://localhost:3001/mcp     |
+
+Every published port binds to `127.0.0.1`, so the stack is not reachable from
+another host. `make up` and `make deploy` refuse to run while
+`CLICKHOUSE_PASSWORD` or `GRAFANA_ADMIN_PASSWORD` is still a template value.
 
 `clickhouse` is shard 1, replica 1 and the cluster entry point: Flink and
 Grafana connect to it, and its `Distributed` tables fan out across the four
@@ -159,10 +165,11 @@ Run `make` or `make help` for the full list.
 |------------------------|------------------------------------------------------|
 | `make setup`           | create `.env`, build images                          |
 | `make dev`             | create `.venv` with pytest/ruff                      |
+| `make up-dev`          | start with hot reload and the small dev symbol lists |
 | `make deploy`          | build + start + topics/schema + job reset + smoke     |
 | `make redeploy`        | recreate containers with current config              |
 | `make smoke`           | end-to-end check: services, jobs, topics, new rows   |
-| `make check`           | lint + unit tests + compose validation               |
+| `make check`           | lint + Python/API/Java tests + typecheck + compose   |
 | `make test` / `lint`   | pytest / ruff                                        |
 | `make check-data`      | row counts and latest timestamp per table            |
 | `make schema`          | apply schema, TTLs, tiering and indicators MV        |
@@ -185,7 +192,8 @@ silently stops moving data.
 | `CLICKHOUSE_PASSWORD`    | yes      | ClickHouse `default` user password    |
 | `GRAFANA_ADMIN_PASSWORD` | yes      | Grafana admin password                |
 | `S3_SECRET_KEY`          | no       | S3Proxy/ClickHouse cold-tier secret (default `s3secret`) |
-| `SEC_CONTACT_EMAIL`      | for SEC  | real contact, SEC requires it in UA   |
+| `SEC_CONTACT_EMAIL`      | for SEC  | real contact; templates fail at startup |
+| `CLICKHOUSE_READ_USER`, `CLICKHOUSE_READ_PASSWORD` | no | read-only user shared by API and Grafana (default `reader`, password falls back to `CLICKHOUSE_PASSWORD`) |
 | `OPTIONS_MAX_EXPIRIES`   | no       | option expiries per symbol (default 8) |
 | `INSTITUTIONAL_CIKS`     | no       | 13F filer CIKs (default Berkshire)    |
 | `SYMBOLS`, `SYMBOLS_SHARD`, `CRYPTO_SYMBOLS`, `CRYPTO_SYMBOLS_SHARD`, `POLL_INTERVAL`, `POLL_BACKOFF`, `PUBLISH_TIMEOUT` | no | producer scaling knobs |
@@ -197,7 +205,7 @@ silently stops moving data.
 ```
 .
 ├── docker-compose.yml          Kafka, ClickHouse, Grafana, Flink, producers
-├── docker-compose.override.yml dev hot reload / debug conveniences
+├── docker-compose.dev.yml      opt-in dev hot reload (`make up-dev`)
 ├── Makefile                    setup, dev, deploy, smoke, check-data, ...
 ├── .env.example                config template (copy to .env)
 ├── init/
@@ -211,12 +219,12 @@ silently stops moving data.
 │   ├── forex/                  Frankfurter (ECB)
 │   └── macro/                  BLS, US Treasury, commodities
 ├── flink-jobs/java/            Java DataStream job + checkpointed ClickHouse sink
-├── flink-jobs/src/             legacy PyFlink job, transforms, config (not submitted)
+├── flink-jobs/src/             topic groups read by the Flink submit script
 ├── docs/java-sink.md           sink decision, measurements, tuning notes
 ├── configs/grafana/            datasource + dashboard provisioning
 ├── configs/prometheus/         scrape config + alert rules
 ├── dashboards/                 Market Analytics, Pipeline Health, Pipeline Input
-├── tests/unit/                 transform + dead-letter tests
+├── tests/unit/                 producer, config and parser-helper tests
 ├── scripts/smoke.sh            end-to-end check used by make smoke
 ├── requirements-dev.txt        pytest, ruff
 └── ruff.toml                   lint rules
@@ -232,6 +240,9 @@ silently stops moving data.
 - The 2x2 ClickHouse layout replaces the old single-node volume. Existing data
   needs a copy into the `*_local` tables or a fresh `make nuke`; the SQL files
   and named volumes are not compatible with the previous single node.
+- Equity bars are stored as-traded. Rows ingested before that change were
+  split- and dividend-adjusted; let the 90-day TTL replace them or clear the
+  equity tables before trusting the daily series.
 - ClickHouse partitions are created by `01/03/05` on a fresh volume. An
   existing cluster uses `make schema`, which re-applies the schema files and
   the indicators MV; it cannot change a table's PARTITION BY in place.

@@ -2,8 +2,8 @@
 
 Status: implemented on `feat/java-crypto-sink`. All four Flink groups
 (`equities`, `crypto`, `fundamentals`, `macro`) are submitted as the Java
-DataStream job. The Python PyFlink job is kept in the tree for reference but is
-no longer submitted.
+DataStream job. The Python PyFlink job was removed; `src/config.py` only
+supplies the group list to the submit script.
 
 ## Why this change
 
@@ -39,11 +39,12 @@ multi-row messages (statement line items). It does not help single-row topics
     rows, attaches the sink; `FLINK_GROUP` selects the group.
   - `Groups` — the four topic groups; job name and consumer group follow the
     Python convention (`Kafka_to_ClickHouse_<group>`, `flink_consumer_group_<group>`).
-  - `MessageParser` — all 10 topics; filings expand one row per filing,
+  - `MessageParser` — all 13 topics; filings expand one row per filing,
     statements expand line items, insider keeps nullable `value`, parse errors
     go to `pipeline_errors`.
-  - `ClickHouseSink` — buffers up to **2,000 rows or 1 s**, one JDBC batch per
-    table, flushes in `snapshotState()`, 11 target tables.
+  - `ClickHouseSink` — buffers up to **2,000 rows or 1 s** (the interval is a
+    processing-time timer, so idle topics still flush), one JDBC batch per
+    table, flushes in `snapshotState()`, 14 target tables.
   - `ClickHouseRow` — `(table, values...)`.
   - `src/test/.../MessageParserTest` — fixtures for every topic and the error
     path; the tests run in the image build.
@@ -111,7 +112,7 @@ Python job's per-message inserts stalled the barrier and the lag stayed.
 | Knob | Default | Effect |
 |---|---|---|
 | `CLICKHOUSE_BATCH_SIZE` | 2000 | rows per batch; raise for throughput, lower if ClickHouse hits its memory limit |
-| `CLICKHOUSE_FLUSH_MS` | 1000 | maximum time a row waits in the sink |
+| `CLICKHOUSE_FLUSH_MS` | 1000 | timer interval; maximum time a row waits in the sink |
 | `CHECKPOINT_INTERVAL_MS` | 60000 | offset commit cadence / at-least-once replay window |
 | `CHECKPOINT_TIMEOUT_MS` | 1800000 | must survive the first big backlog on a cold start |
 | `FLINK_PARALLELISM` | 3 | bounded by the topic partitions and key skew |
@@ -140,10 +141,8 @@ run in `docker compose build`.
 - **Batch/CH memory coupling.** Raising the batch above ~2,000 on 3 GiB nodes
   can hit `MEMORY_LIMIT_EXCEEDED`; scale ClickHouse memory first.
 - **1 s flush latency** for low-rate topics; acceptable for this pipeline.
-- **Cleanup pending:** the Python job, transforms, tests and the
-  `apache-flink`/`clickhouse-connect` requirements are still in the image and
-  the group list is still read from `config.py`; `Groups.java` duplicates it.
-  Remove them after the Java path has run for a while.
+- **The topic-group list lives only in `config.py`.** The submit script passes
+  each group's topics in `FLINK_TOPICS`; the jar has no second copy.
 
 ## Rollback
 
