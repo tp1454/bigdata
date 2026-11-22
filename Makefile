@@ -12,7 +12,7 @@ TABLES := equities_prices:ts crypto_trades:timestamp crypto_ohlcv:timestamp cryp
 
 .PHONY: help setup dev up build deploy redeploy down logs ps shell topics feed \
         load test-topics check-data schema job-reset smoke test lint fmt check nuke url query \
-        require-secrets api-test api-typecheck java-test
+        require-secrets api-test api-typecheck java-test up-dev
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -35,6 +35,9 @@ require-secrets: ## Fail when .env is missing or still has template passwords
 
 up: require-secrets ## Start the stack (BUILD=1 to rebuild images)
 	$(COMPOSE) up -d $(if $(BUILD),--build)
+
+up-dev: require-secrets ## Start with hot reload and the small dev symbol lists
+	$(COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml up -d $(if $(BUILD),--build)
 
 deploy: require-secrets ## Rebuild, start and verify the pipeline (SERVICE=x for one service)
 	$(COMPOSE) up -d --build $(SERVICE)
