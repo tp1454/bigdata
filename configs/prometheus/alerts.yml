@@ -1,0 +1,26 @@
+groups:
+  - name: pipeline
+    rules:
+      - alert: KafkaConsumerLagHigh
+        expr: sum by (consumergroup) (kafka_consumergroup_lag{consumergroup=~"flink_consumer_group_.*"}) > 5000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Consumer group {{ $labels.consumergroup }} is {{ $value }} messages behind"
+
+      - alert: FlinkMetricsDown
+        expr: up{job=~"flink-.*"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} scrape target is down"
+
+      - alert: FlinkCheckpointFailing
+        expr: increase(flink_jobmanager_job_numberOfFailedCheckpoints[10m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Job {{ $labels.job_name }} failed a checkpoint"

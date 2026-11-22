@@ -1,1 +1,96 @@
-{}
+{
+  "uid": "app-analytics",
+  "title": "Market Analytics",
+  "tags": ["crypto", "equities"],
+  "timezone": "utc",
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "schemaVersion": 39,
+  "annotations": { "list": [] },
+  "templating": { "list": [] },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Crypto trades per minute",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "queryType": "sql",
+          "editorMode": "code",
+          "format": 1,
+          "rawSql": "SELECT toStartOfMinute(timestamp) AS time, count() AS trades FROM analytics.crypto_trades WHERE $__timeFilter(timestamp) GROUP BY time ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Trades in the last 5 minutes",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "queryType": "sql",
+          "editorMode": "code",
+          "format": 2,
+          "rawSql": "SELECT count() FROM analytics.crypto_trades WHERE timestamp >= now() - INTERVAL 5 MINUTE"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Latest crypto price per symbol",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "queryType": "sql",
+          "editorMode": "code",
+          "format": 2,
+          "rawSql": "SELECT symbol, argMax(price, timestamp) AS price, max(timestamp) AS last_trade FROM analytics.crypto_trades WHERE timestamp >= now() - INTERVAL 1 HOUR GROUP BY symbol ORDER BY symbol"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Latest equities close per symbol",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "grafana-clickhouse-datasource", "uid": "clickhouse" },
+          "queryType": "sql",
+          "editorMode": "code",
+          "format": 2,
+          "rawSql": "SELECT symbol, argMax(close, ts) AS close, max(ts) AS last_bar FROM analytics.equities_prices WHERE ts >= now() - INTERVAL 1 DAY GROUP BY symbol ORDER BY symbol"
+        }
+      ]
+    }
+  ]
+}

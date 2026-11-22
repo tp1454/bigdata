@@ -1,6 +1,7 @@
 """Fetch SEC EDGAR company filings with proper rate limiting."""
 
 import logging
+import os
 import time
 
 import requests
@@ -11,13 +12,18 @@ from ..base_producer import BaseProducer
 log = logging.getLogger(__name__)
 
 CIKS = ["0000320193"]  # Apple
-USER_EMAIL = "you@example.com"
+USER_EMAIL = os.getenv("SEC_CONTACT_EMAIL", "")
 MIN_INTERVAL = 0.15  # ~6.6 req/s, safely under the 10 req/s limit
 
 
 class SECEdgarProducer(BaseProducer):
     def __init__(self):
         super().__init__(config.TOPIC_FUNDAMENTALS)
+        if not USER_EMAIL:
+            raise RuntimeError(
+                "SEC_CONTACT_EMAIL is required: SEC requires a real contact "
+                "email in the User-Agent"
+            )
         self.headers = {"User-Agent": f"FinancialApp/1.0 ({USER_EMAIL})"}
         self._last_request = 0.0
 

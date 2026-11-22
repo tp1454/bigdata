@@ -4,6 +4,12 @@ from datetime import date, datetime, timezone
 
 log = logging.getLogger(__name__)
 
+# Rows that fail parsing go here instead of being dropped.
+ERROR_TABLE = "pipeline_errors"
+ERROR_COLUMNS = ["topic", "error", "raw"]
+# shortcut: raw payload is truncated to bound the dead-letter row size.
+RAW_LIMIT = 500
+
 # ==========================================
 # 1. CÁC HÀM TIỆN ÍCH CHUYỂN ĐỔI THỜI GIAN
 # ==========================================
@@ -21,6 +27,72 @@ def _to_date(s):
     if not s:
         return None
     return date.fromisoformat(str(s)[:10])
+
+
+def _trade_rows(d):
+    """Expand a batched trade message; accept the old single-trade shape."""
+    if "trades" not in d:
+        return iter([(
+            d["symbol"],
+            _ms_to_dt(d["timestamp"]),
+            float(d["price"]),
+            float(d["quantity"]),
+            int(d["trade_id"]),
+            d["source"],
+        )])
+    return iter([[
+        (
+            t.get("symbol") or d["symbol"],
+            _ms_to_dt(t["timestamp"]),
+            float(t["price"]),
+            float(t["quantity"]),
+            int(t["trade_id"]),
+            d.get("source", "binance"),
+        )
+        for t in d["trades"]
+    ]])
+
+
+def _fundamental_rows(d):
+    """Expand a statement message; empty batches are dead-lettered."""
+    if not d.get("rows"):
+        raise ValueError("empty fundamentals batch")
+    return iter([[
+        (
+            d["symbol"],
+            d["statement"],
+            d["period"],
+            _to_date(d["end_date"]),
+            item["line_item"],
+            float(item["value"]),
+            d["source"],
+        )
+        for item in d["rows"]
+    ]])
+
+
+def _holding_rows(d):
+    """Expand a 13F batch; empty batches are dead-lettered."""
+    if not d.get("rows"):
+        raise ValueError("empty holdings batch")
+    return iter([[
+        (
+            d["filer_cik"],
+            d.get("filer_name") or "",
+            _to_date(d["period"]),
+            _to_date(d["filing_date"]),
+            d["form"],
+            d["accession_number"],
+            row["cusip"],
+            row["issuer"],
+            row.get("title") or "",
+            float(row["shares"]),
+            row.get("share_type") or "",
+            float(row["value"]),
+            d["source"],
+        )
+        for row in d["rows"]
+    ]])
 
 
 # ==========================================
@@ -76,14 +148,7 @@ TOPICS = {
     "crypto.trades": (
         "crypto_trades",
         ["symbol", "timestamp", "price", "quantity", "trade_id", "source"],
-        lambda d: iter([(
-            d["symbol"], 
-            _ms_to_dt(d["timestamp"]), 
-            float(d["price"]),
-            float(d["quantity"]), 
-            int(d["trade_id"]), 
-            d["source"]
-        )]),
+        _trade_rows,
     ),
     "crypto.market": (
         "crypto_market_data",
@@ -94,6 +159,21 @@ TOPICS = {
             float(d["price"]),
             d.get("market_cap"), 
             d.get("volume_24h"), 
+            d["source"]
+        )]),
+    ),
+    "crypto.ohlcv": (
+        "crypto_ohlcv",
+        ["symbol", "interval", "timestamp", "open", "high", "low", "close", "volume", "source"],
+        lambda d: iter([(
+            d["symbol"],
+            d["interval"],
+            _ms_to_dt(d["timestamp"]),
+            float(d["open"]),
+            float(d["high"]),
+            float(d["low"]),
+            float(d["close"]),
+            float(d["volume"]),
             d["source"]
         )]),
     ),
@@ -122,6 +202,75 @@ TOPICS = {
         ["cik", "entity_name", "sic", "accession_number", "filing_date", "form", "primary_document", "source"],
         _sec_rows,
     ),
+    "fundamentals.actions": (
+        "corporate_actions",
+        ["symbol", "action", "action_date", "value", "source"],
+        lambda d: iter([(
+            d["symbol"],
+            d["action"],
+            _to_date(d["action_date"]),
+            float(d["value"]),
+            d["source"]
+        )]),
+    ),
+    "fundamentals.statements": (
+        "fundamentals",
+        ["symbol", "statement", "period", "end_date", "line_item", "value", "source"],
+        _fundamental_rows,
+    ),
+    "fundamentals.insider": (
+        "insider_transactions",
+        ["symbol", "insider", "position", "transaction", "transaction_date", "shares", "value", "ownership", "source"],
+        lambda d: iter([(
+            d["symbol"],
+            d["insider"],
+            d["position"],
+            d["transaction"],
+            _to_date(d["transaction_date"]),
+            float(d["shares"]),
+            d.get("value"),
+            d["ownership"],
+            d["source"]
+        )]),
+    ),
+    "options.metrics": (
+        "options_metrics",
+        ["symbol", "expiry", "timestamp", "underlying_price", "call_volume", "put_volume",
+         "call_oi", "put_oi", "put_call_volume_ratio", "put_call_oi_ratio",
+         "volume_oi_ratio", "source"],
+        lambda d: iter([(
+            d["symbol"],
+            _to_date(d["expiry"]),
+            _ms_to_dt(d["timestamp"]),
+            float(d["underlying_price"]),
+            float(d["call_volume"]),
+            float(d["put_volume"]),
+            float(d["call_oi"]),
+            float(d["put_oi"]),
+            d.get("put_call_volume_ratio"),
+            d.get("put_call_oi_ratio"),
+            d.get("volume_oi_ratio"),
+            d["source"]
+        )]),
+    ),
+    "institutional.holdings": (
+        "institutional_holdings",
+        ["filer_cik", "filer_name", "period", "filing_date", "form", "accession_number",
+         "cusip", "issuer", "title", "shares", "share_type", "value", "source"],
+        _holding_rows,
+    ),
+    "reference.symbols": (
+        "symbol_catalog",
+        ["symbol", "name", "exchange", "etf", "cik", "source"],
+        lambda d: iter([(
+            d["symbol"],
+            d.get("name") or "",
+            d["exchange"],
+            int(d.get("etf") or 0),
+            d.get("cik"),
+            d["source"]
+        )]),
+    ),
 }
 
 
@@ -135,6 +284,7 @@ def parse_kafka_message(topic, raw_json):
     Trả về (yield) các Tuple: (Tên_Bảng, Dòng_Dữ_Liệu)
     """
     if topic not in TOPICS:
+        yield (ERROR_TABLE, (topic, "unknown topic", str(raw_json)[:RAW_LIMIT]))
         return
 
     table_name, _, transform_fn = TOPICS[topic]
@@ -146,7 +296,7 @@ def parse_kafka_message(topic, raw_json):
             # Trả về tên bảng kèm theo dữ liệu để ClickHouseSink biết cần ghi vào đâu
             yield (table_name, row)
             
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as e:
-        # Xử lý lỗi y hệt như file consumers gốc: Ghi log và bỏ qua bản ghi lỗi
-        log.warning("Skip bad record on %s: %s", topic, e)
-        return
+    except (KeyError, OverflowError, OSError, TypeError, ValueError) as e:
+        # Keep the record for inspection instead of dropping it silently.
+        log.warning("Bad record on %s: %s", topic, e)
+        yield (ERROR_TABLE, (topic, str(e), str(raw_json)[:RAW_LIMIT]))

@@ -6,4 +6,7 @@ __pycache__/
 notes/
 AGENTS.md
 .vscode/
+.venv/
 node_modules/
+
+flink-jobs/java/target/
