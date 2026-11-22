@@ -23,13 +23,7 @@ ARCHIVES = "https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/"
 class InstitutionalHoldingsProducer(BaseProducer):
     def __init__(self):
         super().__init__(config.TOPIC_HOLDINGS)
-        email = os.getenv("SEC_CONTACT_EMAIL", "")
-        if not email:
-            raise RuntimeError(
-                "SEC_CONTACT_EMAIL is required: SEC requires a real contact "
-                "email in the User-Agent"
-            )
-        self.client = SECClient(email)
+        self.client = SECClient()
         self.seen = set()
 
     def _files(self, cik, accession):

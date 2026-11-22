@@ -1,7 +1,6 @@
 """Publish the Nasdaq Trader symbol catalogue joined to SEC CIKs."""
 
 import logging
-import os
 
 import requests
 
@@ -24,7 +23,7 @@ RETRY_SECONDS = 3600
 class SymbolCatalogProducer(BaseProducer):
     def __init__(self):
         super().__init__(config.TOPIC_SYMBOLS)
-        self.client = SECClient(os.getenv("SEC_CONTACT_EMAIL", ""))
+        self.client = SECClient()
 
     def _cik_map(self):
         data = self.client.json(SEC_TICKERS)
