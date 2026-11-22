@@ -15,7 +15,7 @@ import java.util.List;
 public class KafkaToClickHouse {
     public static void main(String[] args) throws Exception {
         String group = System.getenv().getOrDefault("FLINK_GROUP", "").trim();
-        List<String> topics = Groups.topics(group);
+        List<String> topics = Groups.topics();
         String jobName = Groups.jobName(group);
         String groupId = Groups.groupId(group);
 

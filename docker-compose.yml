@@ -591,8 +591,10 @@ services:
             echo "$$name already exists; skipping"
             continue
           fi
+          topics=$$(python -c "import sys; sys.path.append('/opt/flink/usrlib/src'); import config; print(','.join(config.TOPIC_GROUPS['$$group']))")
+          [ -n "$$topics" ] || { echo "no topics for $$group" >&2; exit 1; }
           echo "submitting $$name (java)"
-          FLINK_GROUP=$$group flink run -d -m jobmanager:8081 \
+          FLINK_GROUP=$$group FLINK_TOPICS="$$topics" flink run -d -m jobmanager:8081 \
             -c com.example.KafkaToClickHouse \
             /opt/flink/usrlib/flink-sink.jar \
             || { echo "failed to submit $$name" >&2; exit 1; }
