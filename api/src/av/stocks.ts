@@ -116,13 +116,9 @@ export async function daily(
   adjusted: boolean,
 ): Promise<AvPayload | Response> {
   const symbol = need(p, 'symbol').toUpperCase()
-  const days = (await dailyWithActions(symbol)).slice().reverse()
-  const rows = compact(
-    days.map((day) => (adjusted ? day.adj : day.raw)),
-    p,
-  )
 
   if (!adjusted) {
+    const rows = compact(await equityDaily(symbol), p)
     const json = {
       'Meta Data': {
         '1. Information': 'Daily Prices (open, high, low, close) and Volumes',
@@ -136,6 +132,8 @@ export async function daily(
     return payload(p, json, seriesCsv(rows, true))
   }
 
+  const days = (await dailyWithActions(symbol)).slice().reverse()
+  const rows = compact(days.map((day) => day.adj), p)
   const byDate = new Map(days.map((day) => [day.date, day]))
   const series: Record<string, Record<string, string>> = {}
   for (const row of rows) {
@@ -189,17 +187,13 @@ export async function weeklyMonthly(
   adjusted: boolean,
 ): Promise<AvPayload | Response> {
   const symbol = need(p, 'symbol').toUpperCase()
-  const days = (await dailyWithActions(symbol)).slice().reverse()
   const title = period === 'weekly' ? 'Weekly' : 'Monthly'
   const seriesKey = adjusted
     ? `${title} Adjusted Time Series`
     : `${title} Time Series`
 
   if (!adjusted) {
-    const rows = compact(
-      bucket(days.map((day) => day.raw), period),
-      p,
-    )
+    const rows = compact(bucket(await equityDaily(symbol), period), p)
     const json = {
       'Meta Data': {
         '1. Information': `${title} Prices (open, high, low, close) and Volumes`,
@@ -212,6 +206,7 @@ export async function weeklyMonthly(
     return payload(p, json, seriesCsv(rows, true))
   }
 
+  const days = (await dailyWithActions(symbol)).slice().reverse()
   const rawRows = bucket(days.map((day) => day.raw), period)
   const grouped = compact(bucketAdjusted(days, period), p)
   const series: Record<string, Record<string, string>> = {}
@@ -242,7 +237,7 @@ export async function weeklyMonthly(
 
 export async function globalQuote(p: Params): Promise<AvPayload | Response> {
   const symbol = need(p, 'symbol').toUpperCase()
-  const days = (await dailyWithActions(symbol)).slice().reverse()
+  const days = await equityDaily(symbol)
   const last = days[0]
   const prev = days[1]
   if (!last) {
@@ -252,17 +247,17 @@ export async function globalQuote(p: Params): Promise<AvPayload | Response> {
       },
     }
   }
-  const close = last.raw.close
-  const previous = prev?.raw.close ?? close
+  const close = last.close
+  const previous = prev?.close ?? close
   const change = close - previous
   const json = {
     'Global Quote': {
       '01. symbol': symbol,
-      '02. open': px(last.raw.open),
-      '03. high': px(last.raw.high),
-      '04. low': px(last.raw.low),
+      '02. open': px(last.open),
+      '03. high': px(last.high),
+      '04. low': px(last.low),
       '05. price': px(close),
-      '06. volume': vol(last.raw.volume),
+      '06. volume': vol(last.volume),
       '07. latest trading day': last.date,
       '08. previous close': px(previous),
       '09. change': px(change),
@@ -276,11 +271,11 @@ export async function globalQuote(p: Params): Promise<AvPayload | Response> {
       ['symbol', 'open', 'high', 'low', 'price', 'volume', 'latest trading day', 'previous close', 'change', 'change percent'],
       [[
         symbol,
-        px(last.raw.open),
-        px(last.raw.high),
-        px(last.raw.low),
+        px(last.open),
+        px(last.high),
+        px(last.low),
         px(close),
-        vol(last.raw.volume),
+        vol(last.volume),
         last.date,
         px(previous),
         px(change),

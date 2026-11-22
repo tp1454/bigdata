@@ -207,52 +207,65 @@ export type AdjustedDay = {
 // Stored bars are as-traded (the producers pass auto_adjust=False), so raw
 // prices stay as stored and the adjusted series scales by the split ratios and
 // the multiplicative (prevClose - dividend) / prevClose factors of later events.
-export function adjustDaily(daysAsc: Bar[], actions: Action[]): AdjustedDay[] {
-  const splits = actions.filter((a) => a.action === 'split')
-  const dividends = actions.filter((a) => a.action === 'dividend')
-  const out: AdjustedDay[] = []
-
-  for (const day of daysAsc) {
-    let splitCum = 1
-    let splitCoefficient = 1
-    for (const split of splits) {
-      if (split.date > day.date) splitCum *= split.value
-      if (split.date === day.date) splitCoefficient = split.value
-    }
-
-    let divFactor = 1
-    let dividend = 0
-    for (const div of dividends) {
-      if (div.date === day.date) dividend = div.value
-      if (div.date <= day.date) continue
-      const prev = [...daysAsc]
-        .reverse()
-        .find((bar) => bar.date < div.date)
-      if (prev && prev.close > 0) {
-        divFactor *= (prev.close - div.value) / prev.close
-      }
-    }
-
-    const rawBar: Bar = { ...day }
-    const factor = splitCum * divFactor
-    const adjBar: Bar = {
-      date: day.date,
-      open: day.open * factor,
-      high: day.high * factor,
-      low: day.low * factor,
-      close: day.close * factor,
-      volume: day.volume,
-    }
-
-    out.push({
-      date: day.date,
-      raw: rawBar,
-      adj: adjBar,
-      dividend,
-      split: splitCoefficient,
-    })
+const lastBarBefore = (daysAsc: Bar[], date: string): Bar | undefined => {
+  let low = 0
+  let high = daysAsc.length
+  while (low < high) {
+    const mid = (low + high) >> 1
+    if (daysAsc[mid].date < date) low = mid + 1
+    else high = mid
   }
+  return daysAsc[low - 1]
+}
+
+// suffix[i] is the product of event values i..end, so a day only needs the
+// suffix starting at its first later event instead of a scan per event.
+const suffixProducts = (values: number[]): number[] => {
+  const out = new Array(values.length + 1).fill(1) as number[]
+  for (let i = values.length - 1; i >= 0; i -= 1) out[i] = values[i] * out[i + 1]
   return out
+}
+
+export function adjustDaily(daysAsc: Bar[], actions: Action[]): AdjustedDay[] {
+  const byDate = (a: Action, b: Action) => a.date.localeCompare(b.date)
+  const splits = actions.filter((a) => a.action === 'split').sort(byDate)
+  const dividends = actions.filter((a) => a.action === 'dividend').sort(byDate)
+
+  const splitOn = new Map(splits.map((split) => [split.date, split.value]))
+  const dividendOn = new Map(dividends.map((div) => [div.date, div.value]))
+  const splitFactors = suffixProducts(splits.map((split) => split.value))
+  const dividendFactors = suffixProducts(
+    dividends.map((div) => {
+      const prev = lastBarBefore(daysAsc, div.date)
+      return prev && prev.close > 0 ? (prev.close - div.value) / prev.close : 1
+    }),
+  )
+
+  let splitIndex = 0
+  let dividendIndex = 0
+  return daysAsc.map((day) => {
+    while (splitIndex < splits.length && splits[splitIndex].date <= day.date) splitIndex += 1
+    while (
+      dividendIndex < dividends.length &&
+      dividends[dividendIndex].date <= day.date
+    ) dividendIndex += 1
+
+    const factor = splitFactors[splitIndex] * dividendFactors[dividendIndex]
+    return {
+      date: day.date,
+      raw: { ...day },
+      adj: {
+        date: day.date,
+        open: day.open * factor,
+        high: day.high * factor,
+        low: day.low * factor,
+        close: day.close * factor,
+        volume: day.volume,
+      },
+      dividend: dividendOn.get(day.date) ?? 0,
+      split: splitOn.get(day.date) ?? 1,
+    }
+  })
 }
 
 export function bucketAdjusted(
