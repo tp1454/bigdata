@@ -3,5 +3,22 @@
         <default>
             <allow_experimental_refreshable_materialized_view>1</allow_experimental_refreshable_materialized_view>
         </default>
+        <!-- Only SELECTs: the API and Grafana never write. -->
+        <readonly>
+            <readonly>1</readonly>
+        </readonly>
     </profiles>
+
+    <users>
+        <!-- Shared read user for the API and Grafana. The password comes from
+             CLICKHOUSE_READ_PASSWORD, which Compose defaults to the main one. -->
+        <reader>
+            <password from_env="CLICKHOUSE_READ_PASSWORD"/>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>readonly</profile>
+            <quota>default</quota>
+        </reader>
+    </users>
 </clickhouse>
