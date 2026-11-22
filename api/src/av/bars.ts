@@ -203,9 +203,9 @@ export type AdjustedDay = {
   split: number
 }
 
-// Stored equity bars are split-adjusted, so as-traded prices multiply the split
-// ratios of later events. Dividend adjustment is the multiplicative
-// (prevClose - dividend) / prevClose form.
+// Stored bars are as-traded (the producers pass auto_adjust=False), so raw
+// prices stay as stored and the adjusted series scales by the split ratios and
+// the multiplicative (prevClose - dividend) / prevClose factors of later events.
 export function adjustDaily(daysAsc: Bar[], actions: Action[]): AdjustedDay[] {
   const splits = actions.filter((a) => a.action === 'split')
   const dividends = actions.filter((a) => a.action === 'dividend')
@@ -232,20 +232,14 @@ export function adjustDaily(daysAsc: Bar[], actions: Action[]): AdjustedDay[] {
       }
     }
 
-    const rawBar: Bar = {
-      date: day.date,
-      open: day.open * splitCum,
-      high: day.high * splitCum,
-      low: day.low * splitCum,
-      close: day.close * splitCum,
-      volume: splitCum ? day.volume / splitCum : day.volume,
-    }
+    const rawBar: Bar = { ...day }
+    const factor = splitCum * divFactor
     const adjBar: Bar = {
       date: day.date,
-      open: day.open * divFactor,
-      high: day.high * divFactor,
-      low: day.low * divFactor,
-      close: day.close * divFactor,
+      open: day.open * factor,
+      high: day.high * factor,
+      low: day.low * factor,
+      close: day.close * factor,
       volume: day.volume,
     }
 

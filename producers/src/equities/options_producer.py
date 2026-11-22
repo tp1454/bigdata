@@ -40,7 +40,9 @@ class OptionsProducer(BaseProducer):
                 if not expiries:
                     log.warning("No option expiries for %s", symbol)
                     continue
-                history = ticker.history(period="5d", interval="1d")
+                history = ticker.history(
+                    period="5d", interval="1d", auto_adjust=False
+                )
                 if history.empty:
                     log.warning("No underlying price for %s", symbol)
                     continue

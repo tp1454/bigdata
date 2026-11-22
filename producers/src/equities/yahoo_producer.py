@@ -28,8 +28,10 @@ class YahooProducer(BaseProducer):
             for symbol in SYMBOLS:
                 try:
                     last = self.last_ts.get(symbol)
+                    # auto_adjust would fold splits and dividends into the bar
+                    # prices; the API needs the as-traded series to adjust itself.
                     history = yf.Ticker(symbol).history(
-                        interval="1m", **history_kwargs(last)
+                        interval="1m", auto_adjust=False, **history_kwargs(last)
                     )
                     if history.empty:
                         continue

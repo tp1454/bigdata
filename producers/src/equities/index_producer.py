@@ -21,7 +21,9 @@ class IndexProducer(BaseProducer):
     def _fetch(self):
         for ticker in SYMBOLS:
             try:
-                history = yf.Ticker(ticker).history(period="5d", interval="1d")
+                history = yf.Ticker(ticker).history(
+                    period="5d", interval="1d", auto_adjust=False
+                )
                 if history.empty:
                     log.warning("No index history for %s", ticker)
                     continue

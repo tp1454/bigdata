@@ -33,7 +33,9 @@ class CommoditiesProducer(BaseProducer):
     def _fetch(self):
         for ticker, indicator in SERIES.items():
             try:
-                history = yf.Ticker(ticker).history(period="5d", interval="1d")
+                history = yf.Ticker(ticker).history(
+                    period="5d", interval="1d", auto_adjust=False
+                )
                 if history.empty:
                     log.warning("No price history for %s", ticker)
                     continue
