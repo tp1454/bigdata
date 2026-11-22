@@ -5,6 +5,8 @@ import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
 import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
+import org.apache.flink.streaming.api.operators.StreamingRuntimeContext;
+import org.apache.flink.streaming.runtime.tasks.ProcessingTimeService;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -17,6 +19,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ScheduledFuture;
 
 public class ClickHouseSink extends RichSinkFunction<ClickHouseRow>
         implements CheckpointedFunction {
@@ -86,7 +89,8 @@ public class ClickHouseSink extends RichSinkFunction<ClickHouseRow>
     private transient Connection connection;
     private transient Map<String, PreparedStatement> statements;
     private transient List<ClickHouseRow> buffer;
-    private transient long lastFlush;
+    private transient ProcessingTimeService timerService;
+    private transient ScheduledFuture<?> flushTimer;
 
     public ClickHouseSink(
             String url, String user, String password, int batchSize, long flushIntervalMs) {
@@ -106,21 +110,42 @@ public class ClickHouseSink extends RichSinkFunction<ClickHouseRow>
             statements.put(entry.getKey(), connection.prepareStatement(entry.getValue()));
         }
         buffer = new ArrayList<>();
-        lastFlush = System.currentTimeMillis();
+        if (getRuntimeContext() instanceof StreamingRuntimeContext) {
+            timerService = ((StreamingRuntimeContext) getRuntimeContext())
+                    .getProcessingTimeService();
+            scheduleFlush();
+        }
+    }
+
+    // invoke() only runs when a record arrives, so a timer bounds the wait for
+    // low-rate topics instead of leaving rows until the next checkpoint.
+    private void scheduleFlush() {
+        if (timerService == null) {
+            return;
+        }
+        flushTimer = timerService.registerTimer(
+                timerService.getCurrentProcessingTime() + flushIntervalMs,
+                this::flushOnTimer);
+    }
+
+    private void flushOnTimer(long timestamp) throws Exception {
+        try {
+            flush();
+        } finally {
+            scheduleFlush();
+        }
     }
 
     @Override
     public void invoke(ClickHouseRow row, Context context) throws Exception {
         buffer.add(row);
-        if (buffer.size() >= batchSize
-                || System.currentTimeMillis() - lastFlush >= flushIntervalMs) {
+        if (buffer.size() >= batchSize) {
             flush();
         }
     }
 
     private void flush() throws SQLException {
         if (buffer.isEmpty()) {
-            lastFlush = System.currentTimeMillis();
             return;
         }
         Map<String, List<ClickHouseRow>> byTable = new LinkedHashMap<>();
@@ -139,7 +164,6 @@ public class ClickHouseSink extends RichSinkFunction<ClickHouseRow>
             statement.executeBatch();
         }
         buffer.clear();
-        lastFlush = System.currentTimeMillis();
     }
 
     private static void bind(PreparedStatement statement, Object[] values) throws SQLException {
@@ -172,6 +196,11 @@ public class ClickHouseSink extends RichSinkFunction<ClickHouseRow>
 
     @Override
     public void close() throws Exception {
+        if (flushTimer != null) {
+            flushTimer.cancel(false);
+            flushTimer = null;
+        }
+        timerService = null;
         if (connection == null) {
             return;
         }
