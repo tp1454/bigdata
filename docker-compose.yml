@@ -90,7 +90,7 @@ services:
       zookeeper:
         condition: service_healthy
     ports:
-      - "${KAFKA_PORT:-29092}:9092"
+      - "127.0.0.1:${KAFKA_PORT:-29092}:9092"
     environment:
       <<: *kafka-env
       KAFKA_BROKER_ID: 1
@@ -113,7 +113,7 @@ services:
       zookeeper:
         condition: service_healthy
     ports:
-      - "${KAFKA_PORT_2:-29093}:9092"
+      - "127.0.0.1:${KAFKA_PORT_2:-29093}:9092"
     environment:
       <<: *kafka-env
       KAFKA_BROKER_ID: 2
@@ -135,7 +135,7 @@ services:
       zookeeper:
         condition: service_healthy
     ports:
-      - "${KAFKA_PORT_3:-29094}:9092"
+      - "127.0.0.1:${KAFKA_PORT_3:-29094}:9092"
     environment:
       <<: *kafka-env
       KAFKA_BROKER_ID: 3
@@ -224,8 +224,8 @@ services:
     <<: *clickhouse
     container_name: clickhouse
     ports:
-      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
-      - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
+      - "127.0.0.1:${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "127.0.0.1:${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
     environment:
       <<: *clickhouse-env
       CLICKHOUSE_SHARD: "1"
@@ -322,7 +322,7 @@ services:
       clickhouse:
         condition: service_healthy
     ports:
-      - "${GRAFANA_PORT:-3000}:3000"
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
@@ -350,10 +350,10 @@ services:
     environment:
       CLICKHOUSE_URL: http://clickhouse:8123
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
     ports:
-      - "${API_PORT:-4000}:4000"
+      - "127.0.0.1:${API_PORT:-4000}:4000"
     depends_on:
       clickhouse:
         condition: service_healthy
@@ -377,7 +377,7 @@ services:
       - --exclude-tag
       - health
     ports:
-      - "${MCP_PORT:-3001}:3001"
+      - "127.0.0.1:${MCP_PORT:-3001}:3001"
     depends_on:
       api:
         condition: service_started
@@ -501,7 +501,7 @@ services:
     container_name: jobmanager
     restart: unless-stopped
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     depends_on:
       kafka-init:
         condition: service_completed_successfully

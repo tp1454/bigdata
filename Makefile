@@ -11,7 +11,8 @@ KAFKA_TOPICS := equities.prices crypto.trades crypto.ohlcv crypto.market forex.r
 TABLES := equities_prices:ts crypto_trades:timestamp crypto_ohlcv:timestamp crypto_market_data:timestamp forex_rates:timestamp macro_indicators:timestamp company_filings:filing_date corporate_actions:action_date fundamentals:end_date insider_transactions:transaction_date options_metrics:timestamp institutional_holdings:period symbol_catalog:ingested_at pipeline_errors:ts
 
 .PHONY: help setup dev up build deploy redeploy down logs ps shell topics feed \
-        load test-topics check-data schema job-reset smoke test lint fmt check nuke url query
+        load test-topics check-data schema job-reset smoke test lint fmt check nuke url query \
+        require-secrets
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -23,12 +24,19 @@ setup: ## Copy .env.example to .env (if missing) and build images
 dev: ## Create .venv and install test/lint tooling
 	python3 -m venv .venv && .venv/bin/pip install -q -r requirements-dev.txt
 
-up: ## Start the stack (BUILD=1 to rebuild images)
+require-secrets: ## Fail when .env is missing or still has template passwords
 	@test -f .env || (echo "missing .env; run 'make setup'"; exit 1)
+	@for key in CLICKHOUSE_PASSWORD GRAFANA_ADMIN_PASSWORD; do \
+		value=$$(sed -n "s/^$$key=//p" .env | head -1 | tr -d '\r'); \
+		case "$$value" in \
+			""|change-me|clickhouse|admin) echo "FAIL: set a real $$key in .env" >&2; exit 1;; \
+		esac; \
+	done
+
+up: require-secrets ## Start the stack (BUILD=1 to rebuild images)
 	$(COMPOSE) up -d $(if $(BUILD),--build)
 
-deploy: ## Rebuild, start and verify the pipeline (SERVICE=x for one service)
-	@test -f .env || (echo "missing .env; run 'make setup'"; exit 1)
+deploy: require-secrets ## Rebuild, start and verify the pipeline (SERVICE=x for one service)
 	$(COMPOSE) up -d --build $(SERVICE)
 	@if [ -z "$(SERVICE)" ]; then \
 		set -e; \
@@ -39,8 +47,7 @@ deploy: ## Rebuild, start and verify the pipeline (SERVICE=x for one service)
 		$(MAKE) smoke; \
 	fi
 
-redeploy: ## Recreate containers with current config, no image rebuild
-	@test -f .env || (echo "missing .env; run 'make setup'"; exit 1)
+redeploy: require-secrets ## Recreate containers with current config, no image rebuild
 	$(COMPOSE) up -d --force-recreate $(SERVICE)
 
 down: ## Stop the stack (keeps data)
