@@ -1,6 +1,7 @@
 import { Elysia } from 'elysia'
 import { cors } from '@elysiajs/cors'
 
+import { alphaVantage } from './modules/alphaVantage'
 import { crypto } from './modules/crypto'
 import { equities } from './modules/equities'
 import { forex } from './modules/forex'
@@ -13,6 +14,7 @@ export const app = new Elysia()
   .use(openapiPlugin)
   .use(errors)
   .use(health)
+  .use(alphaVantage)
   .use(crypto)
   .use(equities)
   .use(forex)

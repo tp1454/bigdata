@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 # Create, start and check the API for development.
 #
-#   ./api/dev.sh up       build + start clickhouse/api/mcp, seed demo rows, run checks
-#   ./api/dev.sh check    run the HTTP/MCP checks against a running stack
+#   ./api/dev.sh up       build + start the 4-node cluster/api/mcp, apply schema, seed, check
+#   ./api/dev.sh check    run the HTTP/MCP/cluster checks against a running stack
 #   ./api/dev.sh seed     insert demo rows for symbols that have none
 #   ./api/dev.sh reload   restart the MCP bridge after API route changes
-#   ./api/dev.sh down     stop api, mcp and clickhouse (keeps data)
+#   ./api/dev.sh down     stop api, mcp and the whole ClickHouse cluster (keeps data)
 #   ./api/dev.sh logs     follow api and mcp logs
-#   ./api/dev.sh sql "SELECT ..."   run a ClickHouse query
+#   ./api/dev.sh sql "SELECT ..."   run a ClickHouse query on shard 1
 #   ./api/dev.sh test     run the unit tests (no Docker needed)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 COMPOSE="docker compose"
+CH_SERVICES="clickhouse clickhouse-2 clickhouse-3 clickhouse-4 clickhouse-keeper s3proxy"
 API_URL="${API_URL:-http://localhost:4000}"
 MCP_URL="${MCP_URL:-http://localhost:3001}"
 CH_PASSWORD="${CLICKHOUSE_PASSWORD:-clickhouse}"
@@ -84,6 +85,14 @@ check() {
   [ "$status" = "404" ] || fail "expected 404 for unknown path, got $status"
   echo "ok: unknown path -> 404"
 
+  local nodes reachable
+  nodes=$(ch "SELECT count() FROM system.clusters WHERE cluster = 'analytics_cluster'")
+  [ "$nodes" = "4" ] || fail "expected 4 replicas in analytics_cluster, got $nodes"
+  reachable=$(ch "SELECT count() FROM clusterAllReplicas('analytics_cluster', system.one)")
+  [ "$reachable" = "4" ] || fail "only $reachable of 4 analytics_cluster replicas answered"
+  ch "SELECT count() FROM analytics.equities_prices" >/dev/null || fail "distributed read"
+  echo "ok: cluster: 4 replicas reachable, distributed reads"
+
   local sid tools
   sid=$(curl -s -D - -o /dev/null -X POST "$MCP_URL/mcp" \
     -H 'Content-Type: application/json' \
@@ -113,6 +122,7 @@ check() {
 case "${1:-up}" in
   up)
     $COMPOSE up -d --build clickhouse api mcp
+    $COMPOSE run --rm clickhouse-schema
     wait_http api "$API_URL/health"
     wait_http mcp "$MCP_URL/mcp"
     seed
@@ -134,7 +144,7 @@ case "${1:-up}" in
     echo "reloaded api and mcp"
     ;;
   down)
-    $COMPOSE stop api mcp clickhouse
+    $COMPOSE stop api mcp $CH_SERVICES
     ;;
   logs)
     $COMPOSE logs -f api mcp

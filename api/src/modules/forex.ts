@@ -15,7 +15,7 @@ export const forex = new Elysia({ prefix: '/api/forex' }).get(
   async ({ query }) => {
     const rs = await ch.query({
       query: `SELECT pair, timestamp, rate, source
-              FROM forex_rates
+              FROM forex_rates FINAL
               WHERE pair = {pair:String}
               ORDER BY timestamp DESC
               LIMIT 1`,
@@ -35,6 +35,8 @@ export const forex = new Elysia({ prefix: '/api/forex' }).get(
       tags: ['forex'],
       operationId: 'forex.latest',
       summary: 'Latest rate for a currency pair',
+      description:
+        'Newest rate for `pair`, for example `EURUSD`. Example: `GET /api/forex/latest?pair=EURUSD`.'
     },
   },
 )

@@ -21,7 +21,7 @@ export const crypto = new Elysia({ prefix: '/api/crypto' })
       const tradeSource = query.source ?? DEFAULT_SOURCE
       const rs = await ch.query({
         query: `SELECT timestamp, symbol, price, quantity, trade_id, source
-                FROM crypto_trades
+                FROM crypto_trades FINAL
                 WHERE symbol = {symbol:String} AND source = {source:String}
                 ORDER BY timestamp DESC
                 LIMIT 1`,
@@ -41,6 +41,8 @@ export const crypto = new Elysia({ prefix: '/api/crypto' })
         tags: ['crypto'],
         operationId: 'crypto.latest',
         summary: 'Latest trade for a symbol',
+        description:
+          'Newest row for `symbol` and `source`. Example: `GET /api/crypto/latest?symbol=BTCUSDT`.'
       },
     },
   )
@@ -51,7 +53,7 @@ export const crypto = new Elysia({ prefix: '/api/crypto' })
       const rowLimit = clampLimit(query.limit)
       const rs = await ch.query({
         query: `SELECT timestamp, symbol, price, quantity, trade_id, source
-                FROM crypto_trades
+                FROM crypto_trades FINAL
                 WHERE symbol = {symbol:String} AND source = {source:String}
                 ORDER BY timestamp DESC
                 LIMIT ${rowLimit}`,
@@ -76,6 +78,8 @@ export const crypto = new Elysia({ prefix: '/api/crypto' })
         tags: ['crypto'],
         operationId: 'crypto.trades',
         summary: 'Recent trades for a symbol',
+        description:
+          'Newest trades for `symbol` and `source`, newest first. Example: `GET /api/crypto/trades?symbol=BTCUSDT&limit=50`.'
       },
     },
   )

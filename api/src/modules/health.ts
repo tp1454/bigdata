@@ -13,6 +13,8 @@ export const health = new Elysia().get(
       tags: ['health'],
       operationId: 'health.check',
       summary: 'Liveness and ClickHouse ping',
+      description:
+        'Returns `{ ok, service }`. `ok` is the result of a `ping()` against ClickHouse shard 1.',
     },
   },
 )
