@@ -360,13 +360,10 @@ services:
     networks: [streaming]
 
   mcp:
-    image: node:22-alpine
+    build: ./mcp
     container_name: mcp
     restart: unless-stopped
     command:
-      - npx
-      - -y
-      - "@ivotoby/openapi-mcp-server@1.18.0"
       - --api-base-url
       - http://api:4000
       - --openapi-spec
